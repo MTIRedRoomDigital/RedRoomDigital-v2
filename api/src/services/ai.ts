@@ -27,14 +27,21 @@ import { query } from '../db/pool';
  *
  * Get your key at: https://openrouter.ai/keys
  */
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-  defaultHeaders: {
-    'HTTP-Referer': 'https://redroomdigital.com',
-    'X-Title': 'RedRoomDigital',
-  },
-});
+let _openai: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({
+      apiKey: process.env.OPENROUTER_API_KEY || 'not-configured',
+      baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://redroomdigital.com',
+        'X-Title': 'RedRoomDigital',
+      },
+    });
+  }
+  return _openai;
+}
 
 // The model to use — change via AI_MODEL env var
 // Popular choices on OpenRouter:
@@ -221,7 +228,7 @@ export async function generateAIResponse(
   }
 
   // Call the AI
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: AI_MODEL,
     messages: chatMessages,
     max_tokens: 500,
