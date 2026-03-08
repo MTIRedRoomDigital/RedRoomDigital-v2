@@ -1,0 +1,77 @@
+import { Server as SocketServer, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
+
+/**
+ * WebSocket Setup (Socket.IO)
+ *
+ * HOW REAL-TIME CHAT WORKS:
+ * 1. Client connects with their JWT token
+ * 2. Server verifies the token and identifies the user
+ * 3. User "joins" conversation rooms (like chat rooms)
+ * 4. When someone sends a message, it's broadcast to everyone in that room
+ * 5. Typing indicators and status updates also go through here
+ *
+ * Think of it like walkie-talkies — everyone tuned to the same channel
+ * hears the same messages in real-time.
+ */
+export function setupSocket(io: SocketServer) {
+  // Authenticate socket connections
+  io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+
+    if (!token) {
+      return next(new Error('Authentication required'));
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+        userId: string;
+      };
+      socket.data.userId = decoded.userId;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  io.on('connection', (socket: Socket) => {
+    const userId = socket.data.userId;
+    console.log(`🔌 User connected: ${userId}`);
+
+    // Join user's personal room (for notifications)
+    socket.join(`user:${userId}`);
+
+    // Join a conversation room
+    socket.on('join_conversation', (conversationId: string) => {
+      socket.join(`conversation:${conversationId}`);
+      console.log(`👤 User ${userId} joined conversation ${conversationId}`);
+    });
+
+    // Leave a conversation room
+    socket.on('leave_conversation', (conversationId: string) => {
+      socket.leave(`conversation:${conversationId}`);
+    });
+
+    // Typing indicator
+    socket.on('typing', (data: { conversationId: string; characterName: string }) => {
+      socket.to(`conversation:${data.conversationId}`).emit('user_typing', {
+        userId,
+        characterName: data.characterName,
+      });
+    });
+
+    // Stop typing
+    socket.on('stop_typing', (data: { conversationId: string }) => {
+      socket.to(`conversation:${data.conversationId}`).emit('user_stop_typing', {
+        userId,
+      });
+    });
+
+    // Handle disconnect
+    socket.on('disconnect', () => {
+      console.log(`🔌 User disconnected: ${userId}`);
+    });
+  });
+
+  console.log('🔌 Socket.IO initialized');
+}

@@ -1,0 +1,243 @@
+import { Router, Request, Response } from 'express';
+import { query } from '../db/pool';
+import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
+
+export const characterRouter = Router();
+
+// Character limits per subscription tier
+const CHARACTER_LIMITS = { free: 3, premium: 10, ultimate: Infinity };
+
+/**
+ * GET /api/characters
+ * Browse/discover characters (public, paginated, with search)
+ */
+characterRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const offset = (page - 1) * limit;
+    const search = req.query.search as string;
+
+    let whereClause = 'WHERE c.is_public = true';
+    const params: unknown[] = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (c.name ILIKE $${params.length} OR c.description ILIKE $${params.length})`;
+    }
+
+    params.push(limit, offset);
+
+    const result = await query(
+      `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count, c.rating,
+              c.world_id, c.created_at,
+              u.id AS creator_id, u.username AS creator_name
+       FROM characters c
+       JOIN users u ON c.creator_id = u.id
+       ${whereClause}
+       ORDER BY c.created_at DESC
+       LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+
+    // Get total count
+    const countResult = await query(
+      `SELECT COUNT(*) FROM characters c ${whereClause}`,
+      search ? [`%${search}%`] : []
+    );
+
+    res.json({
+      success: true,
+      data: result.rows,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(countResult.rows[0].count),
+        totalPages: Math.ceil(parseInt(countResult.rows[0].count) / limit),
+      },
+    });
+  } catch (error: any) {
+    console.error('Get characters error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/characters/:id
+ * Get a single character with full details
+ */
+characterRouter.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT c.*, u.username AS creator_name
+       FROM characters c
+       JOIN users u ON c.creator_id = u.id
+       WHERE c.id = $1`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+
+    // Get relationships
+    const relationships = await query(
+      `SELECT cr.*, rc.name AS related_character_name, rc.avatar_url AS related_character_avatar
+       FROM character_relationships cr
+       JOIN characters rc ON cr.related_character_id = rc.id
+       WHERE cr.character_id = $1`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...result.rows[0],
+        relationships: relationships.rows,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/characters
+ * Create a new character (requires auth, enforces tier limits)
+ */
+characterRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const tier = req.user!.subscription as keyof typeof CHARACTER_LIMITS;
+
+    // Check character limit
+    const countResult = await query(
+      'SELECT COUNT(*) FROM characters WHERE creator_id = $1',
+      [userId]
+    );
+    const currentCount = parseInt(countResult.rows[0].count);
+    const limit = CHARACTER_LIMITS[tier];
+
+    if (currentCount >= limit) {
+      res.status(403).json({
+        success: false,
+        message: `You've reached your character limit (${limit}). Upgrade your subscription to create more.`,
+        currentCount,
+        limit,
+      });
+      return;
+    }
+
+    const {
+      name, description, avatar_url, personality, background,
+      likes, dislikes, world_id, is_public, is_ai_enabled, tags,
+    } = req.body;
+
+    if (!name) {
+      res.status(400).json({ success: false, message: 'Character name is required' });
+      return;
+    }
+
+    const result = await query(
+      `INSERT INTO characters
+        (creator_id, name, description, avatar_url, personality, background,
+         likes, dislikes, world_id, is_public, is_ai_enabled, tags)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING *`,
+      [
+        userId, name, description || null, avatar_url || null,
+        JSON.stringify(personality || {}), background || null,
+        JSON.stringify(likes || []), JSON.stringify(dislikes || []),
+        world_id || null, is_public !== false, is_ai_enabled !== false,
+        tags || [],
+      ]
+    );
+
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('Create character error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * PUT /api/characters/:id
+ * Update a character (only owner can update)
+ */
+characterRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    // Verify ownership
+    const existing = await query(
+      'SELECT creator_id FROM characters WHERE id = $1',
+      [req.params.id]
+    );
+
+    if (existing.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+
+    if (existing.rows[0].creator_id !== req.user!.id) {
+      res.status(403).json({ success: false, message: 'You can only edit your own characters' });
+      return;
+    }
+
+    const {
+      name, description, avatar_url, personality, background,
+      likes, dislikes, world_id, is_public, is_ai_enabled, tags,
+    } = req.body;
+
+    const result = await query(
+      `UPDATE characters SET
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        avatar_url = COALESCE($3, avatar_url),
+        personality = COALESCE($4, personality),
+        background = COALESCE($5, background),
+        likes = COALESCE($6, likes),
+        dislikes = COALESCE($7, dislikes),
+        world_id = $8,
+        is_public = COALESCE($9, is_public),
+        is_ai_enabled = COALESCE($10, is_ai_enabled),
+        tags = COALESCE($11, tags)
+       WHERE id = $12
+       RETURNING *`,
+      [
+        name, description, avatar_url,
+        personality ? JSON.stringify(personality) : null,
+        background,
+        likes ? JSON.stringify(likes) : null,
+        dislikes ? JSON.stringify(dislikes) : null,
+        world_id, is_public, is_ai_enabled, tags,
+        req.params.id,
+      ]
+    );
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * DELETE /api/characters/:id
+ * Delete a character (only owner can delete)
+ */
+characterRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      'DELETE FROM characters WHERE id = $1 AND creator_id = $2 RETURNING id',
+      [req.params.id, req.user!.id]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found or not yours' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Character deleted' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
