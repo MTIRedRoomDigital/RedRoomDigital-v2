@@ -281,7 +281,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
               plan = 'ultimate';
             }
 
-            const expiresAt = new Date(subscription.current_period_end * 1000);
+            const expiresAt = new Date((subscription as any).current_period_end * 1000);
             await query(
               `UPDATE users SET subscription = $1, subscription_expires_at = $2, updated_at = NOW() WHERE id = $3`,
               [plan, expiresAt, userId]

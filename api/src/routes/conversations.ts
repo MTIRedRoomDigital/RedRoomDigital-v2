@@ -377,7 +377,7 @@ conversationRouter.post('/:id/messages', authenticate, async (req: AuthRequest, 
  */
 conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const conversationId = req.params.id;
+    const conversationId = req.params.id as string;
     const userId = req.user!.id;
 
     // Verify user is a participant
