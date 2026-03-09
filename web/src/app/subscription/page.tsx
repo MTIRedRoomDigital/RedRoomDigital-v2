@@ -6,6 +6,8 @@ import { api } from '@/lib/api';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 interface SubscriptionData {
   tier: string;
   expiresAt: string | null;
