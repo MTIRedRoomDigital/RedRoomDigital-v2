@@ -160,8 +160,8 @@ export default function CreateWorldPage() {
               <ImageUpload
                 shape="banner"
                 uploadType="banner"
-                currentUrl={bannerUrl}
-                onUpload={(url) => setBannerUrl(url)}
+                currentImageUrl={bannerUrl}
+                onUploadComplete={(url) => setBannerUrl(url)}
               />
               <p className="text-xs text-slate-500 mt-1">A wide banner image displayed at the top of your world page</p>
             </div>
@@ -172,8 +172,8 @@ export default function CreateWorldPage() {
               <ImageUpload
                 shape="square"
                 uploadType="thumbnail"
-                currentUrl={thumbnailUrl}
-                onUpload={(url) => setThumbnailUrl(url)}
+                currentImageUrl={thumbnailUrl}
+                onUploadComplete={(url) => setThumbnailUrl(url)}
               />
               <p className="text-xs text-slate-500 mt-1">A square icon shown in world listings</p>
             </div>
