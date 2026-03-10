@@ -79,6 +79,44 @@ class ApiClient {
   delete<T>(endpoint: string) {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
+
+  /**
+   * Upload a file to the API.
+   * Uses FormData instead of JSON — the browser auto-sets the
+   * Content-Type to multipart/form-data with the correct boundary.
+   */
+  async upload<T>(endpoint: string, file: File, fieldName: string = 'image'): Promise<ApiResponse<T>> {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append(fieldName, file);
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    // Do NOT set Content-Type — browser will auto-set multipart/form-data with boundary
+
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        localStorage.removeItem('rrd_token');
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+      }
+
+      return data;
+    } catch {
+      return { success: false, message: 'Upload failed. Please try again.' };
+    }
+  }
 }
 
 export const api = new ApiClient();

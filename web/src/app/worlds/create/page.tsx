@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ImageUpload } from '@/components/ImageUpload';
 
 export default function CreateWorldPage() {
   const { user, loading: authLoading } = useAuth();
@@ -23,6 +24,8 @@ export default function CreateWorldPage() {
   const [techLevel, setTechLevel] = useState('');
   const [customRules, setCustomRules] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
   const tabs = ['Basics', 'Lore & Setting', 'Rules', 'Settings'];
 
@@ -53,6 +56,8 @@ export default function CreateWorldPage() {
       lore: lore.trim() || null,
       rules: Object.keys(rules).length > 0 ? rules : null,
       is_public: isPublic,
+      banner_url: bannerUrl,
+      thumbnail_url: thumbnailUrl,
     });
 
     setSubmitting(false);
@@ -149,6 +154,30 @@ export default function CreateWorldPage() {
         {/* Tab 0: Basics */}
         {tab === 0 && (
           <>
+            {/* Banner Image */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">Banner Image</label>
+              <ImageUpload
+                shape="banner"
+                uploadType="banner"
+                currentUrl={bannerUrl}
+                onUpload={(url) => setBannerUrl(url)}
+              />
+              <p className="text-xs text-slate-500 mt-1">A wide banner image displayed at the top of your world page</p>
+            </div>
+
+            {/* Thumbnail Image */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">Thumbnail</label>
+              <ImageUpload
+                shape="square"
+                uploadType="thumbnail"
+                currentUrl={thumbnailUrl}
+                onUpload={(url) => setThumbnailUrl(url)}
+              />
+              <p className="text-xs text-slate-500 mt-1">A square icon shown in world listings</p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
                 World Name <span className="text-red-400">*</span>

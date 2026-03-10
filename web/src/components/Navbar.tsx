@@ -83,9 +83,13 @@ export function Navbar() {
               {/* Desktop user dropdown */}
               <div className="relative group hidden md:block">
                 <button className="flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white font-bold text-xs">
-                    {user.username[0].toUpperCase()}
-                  </div>
+                  {(user as any).avatar_url ? (
+                    <img src={(user as any).avatar_url} alt={user.username} className="w-8 h-8 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white font-bold text-xs">
+                      {user.username[0].toUpperCase()}
+                    </div>
+                  )}
                   <span>{user.username}</span>
                   <span className={`text-xs px-1.5 py-0.5 rounded ${
                     user.subscription === 'ultimate' ? 'bg-purple-900/30 text-purple-400' :

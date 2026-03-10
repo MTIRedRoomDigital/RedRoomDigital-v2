@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
+import { ImageUpload } from '@/components/ImageUpload';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -25,6 +26,7 @@ export default function CreateCharacterPage() {
   // Basic info
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Personality (the AI brain)
   const [traits, setTraits] = useState('');
@@ -79,6 +81,7 @@ export default function CreateCharacterPage() {
     const characterData = {
       name: name.trim(),
       description: description.trim() || null,
+      avatar_url: avatarUrl,
       personality: {
         traits: parseList(traits),
         values: parseList(values),
@@ -150,6 +153,26 @@ export default function CreateCharacterPage() {
         {/* TAB: Basics */}
         {activeTab === 'basics' && (
           <div className="space-y-5">
+            {/* Character Avatar */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Character Avatar
+              </label>
+              <ImageUpload
+                currentImageUrl={avatarUrl}
+                onUploadComplete={(url) => setAvatarUrl(url)}
+                uploadType="avatar"
+                shape="square"
+                size="lg"
+                fallback={
+                  <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-5xl">
+                    🎭
+                  </div>
+                }
+              />
+              <p className="text-xs text-slate-500 mt-1">Click to upload a character portrait (max 5MB)</p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
                 Character Name <span className="text-red-400">*</span>

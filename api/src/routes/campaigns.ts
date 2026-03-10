@@ -92,7 +92,7 @@ campaignRouter.get('/:id', async (req: Request, res: Response) => {
 campaignRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const { world_id, name, description, narrative_arc } = req.body;
+    const { world_id, name, description, narrative_arc, banner_url } = req.body;
 
     if (!world_id || !name) {
       res.status(400).json({ success: false, message: 'World ID and campaign name are required' });
@@ -125,10 +125,10 @@ campaignRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     );
 
     const result = await query(
-      `INSERT INTO campaigns (world_id, creator_id, name, description, narrative_arc, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO campaigns (world_id, creator_id, name, description, narrative_arc, sort_order, banner_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [world_id, userId, name, description, narrative_arc, sortResult.rows[0].next_order]
+      [world_id, userId, name, description, narrative_arc, sortResult.rows[0].next_order, banner_url || null]
     );
 
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -176,17 +176,18 @@ campaignRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const { name, description, narrative_arc, status } = req.body;
+    const { name, description, narrative_arc, status, banner_url } = req.body;
 
     const result = await query(
       `UPDATE campaigns SET
         name = COALESCE($1, name),
         description = COALESCE($2, description),
         narrative_arc = COALESCE($3, narrative_arc),
-        status = COALESCE($4, status)
-       WHERE id = $5
+        status = COALESCE($4, status),
+        banner_url = COALESCE($5, banner_url)
+       WHERE id = $6
        RETURNING *`,
-      [name, description, narrative_arc, status, req.params.id]
+      [name, description, narrative_arc, status, banner_url, req.params.id]
     );
 
     res.json({ success: true, data: result.rows[0] });

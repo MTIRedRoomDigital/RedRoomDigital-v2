@@ -142,9 +142,13 @@ export default function CharacterDetailPage() {
 
       {/* Character Header */}
       <div className="flex items-start gap-6 mb-8">
-        <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-5xl shrink-0">
-          🎭
-        </div>
+        {character.avatar_url ? (
+          <img src={character.avatar_url} alt={character.name} className="w-28 h-28 rounded-2xl object-cover shrink-0" />
+        ) : (
+          <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-5xl shrink-0">
+            🎭
+          </div>
+        )}
 
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
@@ -302,9 +306,13 @@ export default function CharacterDetailPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {character.relationships.map((rel) => (
                 <div key={rel.id} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
-                  <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-lg">
-                    🎭
-                  </div>
+                  {rel.related_character_avatar ? (
+                    <img src={rel.related_character_avatar} alt={rel.related_character_name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-lg">
+                      🎭
+                    </div>
+                  )}
                   <div className="flex-1">
                     <div className="text-sm font-medium text-white">{rel.related_character_name}</div>
                     <div className="text-xs text-slate-400 capitalize">{rel.relationship_type}</div>
@@ -350,9 +358,13 @@ export default function CharacterDetailPage() {
                   onClick={() => startConversation(char.id)}
                   className="w-full flex items-center gap-3 p-3 bg-slate-700/50 border border-slate-600 rounded-lg hover:border-red-500/50 hover:bg-slate-700 transition-colors text-left"
                 >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-lg shrink-0">
-                    🎭
-                  </div>
+                  {char.avatar_url ? (
+                    <img src={char.avatar_url} alt={char.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-lg shrink-0">
+                      🎭
+                    </div>
+                  )}
                   <span className="font-medium text-white">{char.name}</span>
                 </button>
               ))}

@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { ImageUpload } from '@/components/ImageUpload';
 import Link from 'next/link';
 
 export default function SettingsPage() {
@@ -17,6 +18,7 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -26,6 +28,7 @@ export default function SettingsPage() {
     if (user) {
       setUsername(user.username || '');
       setBio((user as any).bio || '');
+      setAvatarUrl((user as any).avatar_url || null);
     }
   }, [user, authLoading, router]);
 
@@ -33,7 +36,7 @@ export default function SettingsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await api.put('/api/users/profile', { username, bio });
+      const res = await api.put('/api/users/profile', { username, bio, avatar_url: avatarUrl });
       if (res.success) {
         setMessage({ type: 'success', text: 'Profile updated successfully!' });
         if (refreshUser) refreshUser();
@@ -106,11 +109,20 @@ export default function SettingsPage() {
         <h2 className="text-xl font-semibold text-white mb-6">Edit Profile</h2>
 
         <div className="space-y-5">
-          {/* Avatar Preview */}
+          {/* Avatar Upload */}
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white text-2xl font-bold">
-              {username[0]?.toUpperCase() || '?'}
-            </div>
+            <ImageUpload
+              currentImageUrl={avatarUrl}
+              onUploadComplete={(url) => setAvatarUrl(url)}
+              uploadType="avatar"
+              shape="circle"
+              size="md"
+              fallback={
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white text-2xl font-bold">
+                  {username[0]?.toUpperCase() || '?'}
+                </div>
+              }
+            />
             <div>
               <p className="text-white font-medium">{username}</p>
               <p className="text-xs text-slate-500">{user.email}</p>

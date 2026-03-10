@@ -10,6 +10,7 @@ interface World {
   name: string;
   description: string | null;
   setting: string | null;
+  thumbnail_url: string | null;
   member_count: number;
   character_count: number;
   creator_name: string;
@@ -149,9 +150,13 @@ export default function WorldsPage() {
               >
                 {/* World Header */}
                 <div className="flex items-start gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl shrink-0">
-                    🌍
-                  </div>
+                  {world.thumbnail_url ? (
+                    <img src={world.thumbnail_url} alt={world.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl shrink-0">
+                      🌍
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-white group-hover:text-amber-400 transition-colors truncate">
                       {world.name}

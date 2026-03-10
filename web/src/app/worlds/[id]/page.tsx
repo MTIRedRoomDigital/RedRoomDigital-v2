@@ -11,6 +11,8 @@ interface WorldData {
   creator_id: string;
   name: string;
   description: string | null;
+  banner_url: string | null;
+  thumbnail_url: string | null;
   lore: string | null;
   rules: {
     magic_system?: string;
@@ -145,6 +147,13 @@ export default function WorldDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
+      {/* Banner Image */}
+      {world.banner_url && (
+        <div className="w-full h-48 md:h-64 rounded-xl overflow-hidden mb-6 -mt-2">
+          <img src={world.banner_url} alt={`${world.name} banner`} className="w-full h-full object-cover" />
+        </div>
+      )}
+
       {/* Back Link */}
       <Link href="/worlds" className="text-sm text-slate-400 hover:text-white transition-colors mb-4 inline-block">
         &larr; Back to Worlds
@@ -152,9 +161,13 @@ export default function WorldDetailPage() {
 
       {/* World Header */}
       <div className="flex items-start gap-5 mb-6">
-        <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-4xl shrink-0">
-          🌍
-        </div>
+        {world.thumbnail_url ? (
+          <img src={world.thumbnail_url} alt={world.name} className="w-20 h-20 rounded-xl object-cover shrink-0" />
+        ) : (
+          <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-4xl shrink-0">
+            🌍
+          </div>
+        )}
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-3xl font-bold text-white">{world.name}</h1>
@@ -334,9 +347,13 @@ export default function WorldDetailPage() {
                   className="group p-4 bg-slate-800 border border-slate-700 rounded-lg hover:border-red-500/50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-xl shrink-0">
-                      🎭
-                    </div>
+                    {char.avatar_url ? (
+                      <img src={char.avatar_url} alt={char.name} className="w-12 h-12 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-xl shrink-0">
+                        🎭
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
                         {char.name}
@@ -362,9 +379,13 @@ export default function WorldDetailPage() {
               key={member.user_id}
               className="flex items-center gap-3 p-3 bg-slate-800 border border-slate-700 rounded-lg"
             >
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
-                {member.username[0].toUpperCase()}
-              </div>
+              {member.avatar_url ? (
+                <img src={member.avatar_url} alt={member.username} className="w-10 h-10 rounded-full object-cover shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {member.username[0].toUpperCase()}
+                </div>
+              )}
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-white">{member.username}</span>

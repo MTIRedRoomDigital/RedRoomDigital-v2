@@ -157,7 +157,7 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
       return;
     }
 
-    const { name, description, lore, rules, setting, is_public } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url } = req.body;
 
     if (!name) {
       res.status(400).json({ success: false, message: 'World name is required' });
@@ -165,10 +165,10 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
     }
 
     const result = await query(
-      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, banner_url, thumbnail_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [userId, name, description, lore, JSON.stringify(rules || {}), setting, is_public !== false]
+      [userId, name, description, lore, JSON.stringify(rules || {}), setting, is_public !== false, banner_url || null, thumbnail_url || null]
     );
 
     // Auto-add creator as WorldMaster
@@ -223,7 +223,7 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
       }
     }
 
-    const { name, description, lore, rules, setting, is_public } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url } = req.body;
 
     const result = await query(
       `UPDATE worlds SET
@@ -232,10 +232,12 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
         lore = COALESCE($3, lore),
         rules = COALESCE($4, rules),
         setting = COALESCE($5, setting),
-        is_public = COALESCE($6, is_public)
-       WHERE id = $7
+        is_public = COALESCE($6, is_public),
+        banner_url = COALESCE($7, banner_url),
+        thumbnail_url = COALESCE($8, thumbnail_url)
+       WHERE id = $9
        RETURNING *`,
-      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, is_public, worldId]
+      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, is_public, banner_url, thumbnail_url, worldId]
     );
 
     res.json({ success: true, data: result.rows[0] });

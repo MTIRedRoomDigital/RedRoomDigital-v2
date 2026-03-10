@@ -75,9 +75,13 @@ export default function ProfilePage() {
       {/* Profile Header */}
       <div className="flex items-start gap-6 mb-8">
         {/* Avatar */}
-        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white text-3xl font-bold shrink-0">
-          {profile.username[0].toUpperCase()}
-        </div>
+        {profile.avatar_url ? (
+          <img src={profile.avatar_url} alt={profile.username} className="w-24 h-24 rounded-full object-cover shrink-0" />
+        ) : (
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white text-3xl font-bold shrink-0">
+            {profile.username[0].toUpperCase()}
+          </div>
+        )}
 
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1">
@@ -148,9 +152,13 @@ export default function ProfilePage() {
                 className="p-4 bg-slate-800 border border-slate-700 rounded-lg hover:border-red-500/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl">
-                    🎭
-                  </div>
+                  {char.avatar_url ? (
+                    <img src={char.avatar_url} alt={char.name} className="w-12 h-12 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl">
+                      🎭
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-white truncate">{char.name}</h3>
                     <p className="text-sm text-slate-400 truncate">

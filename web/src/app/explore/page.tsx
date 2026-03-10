@@ -123,9 +123,13 @@ export default function ExplorePage() {
                 className="group p-5 bg-slate-800 border border-slate-700 rounded-xl hover:border-red-500/50 transition-all hover:shadow-lg hover:shadow-red-500/5"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-2xl shrink-0">
-                    🎭
-                  </div>
+                  {char.avatar_url ? (
+                    <img src={char.avatar_url} alt={char.name} className="w-12 h-12 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-2xl shrink-0">
+                      🎭
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
                       {char.name}
