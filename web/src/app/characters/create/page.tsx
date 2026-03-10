@@ -63,8 +63,7 @@ export default function CreateCharacterPage() {
     return null;
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setError('');
 
     if (!name.trim()) {
@@ -149,7 +148,7 @@ export default function CreateCharacterPage() {
         ))}
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(e) => e.preventDefault()}>
         {/* TAB: Basics */}
         {activeTab === 'basics' && (
           <div className="space-y-5">
@@ -391,7 +390,8 @@ export default function CreateCharacterPage() {
               </button>
             ) : (
               <button
-                type="submit"
+                type="button"
+                onClick={handleSubmit}
                 disabled={loading || !name.trim()}
                 className="px-8 py-2 text-sm bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
               >

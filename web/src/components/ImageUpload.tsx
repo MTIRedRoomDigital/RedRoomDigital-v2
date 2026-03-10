@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { api } from '@/lib/api';
+import { CropModal } from './CropModal';
 
 interface ImageUploadProps {
   currentImageUrl: string | null;
@@ -19,6 +20,13 @@ const sizeMap = {
   banner: { sm: 'w-full h-24', md: 'w-full h-36', lg: 'w-full h-48' },
 };
 
+// Aspect ratios for different upload types
+const aspectMap = {
+  avatar: 1,       // Square (1:1)
+  banner: 3,       // Wide (3:1)
+  thumbnail: 1.5,  // Landscape (3:2)
+};
+
 export function ImageUpload({
   currentImageUrl,
   onUploadComplete,
@@ -31,6 +39,9 @@ export function ImageUpload({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showCrop, setShowCrop] = useState(false);
+  const [rawImageUrl, setRawImageUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const displayUrl = previewUrl || currentImageUrl;
@@ -57,14 +68,40 @@ export function ImageUpload({
       return;
     }
 
-    // Show instant preview
-    setPreviewUrl(URL.createObjectURL(file));
-    setUploading(true);
     setError('');
+    setSelectedFile(file);
+
+    // Create a preview URL for the crop modal
+    const objectUrl = URL.createObjectURL(file);
+    setRawImageUrl(objectUrl);
+    setShowCrop(true);
+
+    // Reset input so same file can be selected again
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    setShowCrop(false);
+
+    // Show instant preview of cropped image
+    const croppedPreviewUrl = URL.createObjectURL(croppedBlob);
+    setPreviewUrl(croppedPreviewUrl);
+    setUploading(true);
+
+    // Clean up the raw image URL
+    if (rawImageUrl) {
+      URL.revokeObjectURL(rawImageUrl);
+      setRawImageUrl(null);
+    }
+
+    // Convert blob to File for upload
+    const croppedFile = new File([croppedBlob], selectedFile?.name || 'cropped-image.jpg', {
+      type: 'image/jpeg',
+    });
 
     const res = await api.upload<{ url: string }>(
       `/api/upload?type=${uploadType}`,
-      file
+      croppedFile
     );
 
     setUploading(false);
@@ -72,14 +109,21 @@ export function ImageUpload({
     if (res.success && res.data) {
       const url = (res.data as any).url;
       onUploadComplete(url);
-      // Keep preview until parent re-renders with new URL
     } else {
       setError(res.message || 'Upload failed');
       setPreviewUrl(null);
     }
 
-    // Reset input so same file can be selected again
-    if (inputRef.current) inputRef.current.value = '';
+    setSelectedFile(null);
+  };
+
+  const handleCropCancel = () => {
+    setShowCrop(false);
+    if (rawImageUrl) {
+      URL.revokeObjectURL(rawImageUrl);
+      setRawImageUrl(null);
+    }
+    setSelectedFile(null);
   };
 
   return (
@@ -137,6 +181,16 @@ export function ImageUpload({
       {/* Error message */}
       {error && (
         <p className="text-xs text-red-400 mt-1">{error}</p>
+      )}
+
+      {/* Crop Modal */}
+      {showCrop && rawImageUrl && (
+        <CropModal
+          imageUrl={rawImageUrl}
+          aspect={aspectMap[uploadType] || 1}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
       )}
     </div>
   );
