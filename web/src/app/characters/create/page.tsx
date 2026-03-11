@@ -52,6 +52,13 @@ export default function CreateCharacterPage() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'basics' | 'personality' | 'background' | 'settings'>('basics');
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [authLoading, user, router]);
+
   // Fetch user's worlds for the dropdown
   useEffect(() => {
     if (user) {
@@ -64,17 +71,12 @@ export default function CreateCharacterPage() {
     }
   }, [user]);
 
-  if (authLoading) {
+  if (authLoading || !user) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
         <div className="text-slate-400">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    router.push('/login');
-    return null;
   }
 
   const handleSubmit = async () => {
