@@ -203,7 +203,8 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
 export async function generateAIResponse(
   characterId: string,
   conversationId: string,
-  recentMessages: { sender_name: string; content: string; sender_character_id: string }[]
+  recentMessages: { sender_name: string; content: string; sender_character_id: string; sender_type?: string }[],
+  isTest?: boolean
 ): Promise<{
   content: string;
   model: string;
@@ -219,11 +220,17 @@ export async function generateAIResponse(
   ];
 
   // Add conversation history (last 20 messages for context)
+  // For test chats: use sender_type to distinguish (both sides have same character_id)
+  // For normal chats: use character_id matching
   for (const msg of recentMessages.slice(-20)) {
-    const isMe = msg.sender_character_id === characterId;
+    const isMe = isTest
+      ? msg.sender_type === 'ai'
+      : msg.sender_character_id === characterId;
+
+    const senderLabel = isTest && !isMe ? 'Stranger' : msg.sender_name;
     chatMessages.push({
       role: isMe ? 'assistant' : 'user',
-      content: `[${msg.sender_name}]: ${msg.content}`,
+      content: `[${senderLabel}]: ${msg.content}`,
     });
   }
 

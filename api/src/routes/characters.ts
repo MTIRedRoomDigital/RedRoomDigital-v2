@@ -31,9 +31,11 @@ characterRouter.get('/', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count, c.rating,
               c.world_id, c.created_at,
-              u.id AS creator_id, u.username AS creator_name
+              u.id AS creator_id, u.username AS creator_name,
+              w.name AS world_name
        FROM characters c
        JOIN users u ON c.creator_id = u.id
+       LEFT JOIN worlds w ON c.world_id = w.id
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -69,9 +71,10 @@ characterRouter.get('/', async (req: Request, res: Response) => {
 characterRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const result = await query(
-      `SELECT c.*, u.username AS creator_name
+      `SELECT c.*, u.username AS creator_name, w.name AS world_name
        FROM characters c
        JOIN users u ON c.creator_id = u.id
+       LEFT JOIN worlds w ON c.world_id = w.id
        WHERE c.id = $1`,
       [req.params.id]
     );

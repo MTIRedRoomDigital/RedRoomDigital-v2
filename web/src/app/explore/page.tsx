@@ -15,6 +15,7 @@ interface Character {
   creator_id: string;
   creator_name: string;
   world_id: string | null;
+  world_name: string | null;
   created_at: string;
 }
 
@@ -137,6 +138,12 @@ export default function ExplorePage() {
                     <p className="text-xs text-slate-500">by {char.creator_name}</p>
                   </div>
                 </div>
+
+                {char.world_name && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-purple-900/30 text-purple-300 border border-purple-800/50 rounded-full mb-2">
+                    🌍 {char.world_name}
+                  </span>
+                )}
 
                 {char.description && (
                   <p className="text-sm text-slate-400 mb-3 line-clamp-2">{char.description}</p>

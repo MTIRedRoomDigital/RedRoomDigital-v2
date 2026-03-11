@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { ImageUpload } from '@/components/ImageUpload';
@@ -44,11 +44,25 @@ export default function CreateCharacterPage() {
   const [tags, setTags] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [isAiEnabled, setIsAiEnabled] = useState(true);
+  const [worldId, setWorldId] = useState<string | null>(null);
+  const [myWorlds, setMyWorlds] = useState<{ id: string; name: string }[]>([]);
 
   // Form state
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'basics' | 'personality' | 'background' | 'settings'>('basics');
+
+  // Fetch user's worlds for the dropdown
+  useEffect(() => {
+    if (user) {
+      api.get<any>('/api/users/profile').then((res) => {
+        if (res.success && res.data) {
+          const worlds = (res.data as any).worlds || [];
+          setMyWorlds(worlds.map((w: any) => ({ id: w.id, name: w.name })));
+        }
+      });
+    }
+  }, [user]);
 
   if (authLoading) {
     return (
@@ -90,6 +104,7 @@ export default function CreateCharacterPage() {
       likes: parseList(likes),
       dislikes: parseList(dislikes),
       tags: parseList(tags),
+      world_id: worldId,
       is_public: isPublic,
       is_ai_enabled: isAiEnabled,
     };
@@ -303,6 +318,28 @@ export default function CreateCharacterPage() {
         {/* TAB: Settings */}
         {activeTab === 'settings' && (
           <div className="space-y-5">
+            {/* World Assignment */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                World
+              </label>
+              <select
+                value={worldId || ''}
+                onChange={(e) => setWorldId(e.target.value || null)}
+                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              >
+                <option value="">No World (Worldless)</option>
+                {myWorlds.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">
+                {myWorlds.length === 0
+                  ? 'Create a world first to assign characters to it.'
+                  : 'Assign this character to one of your worlds for richer AI interactions.'}
+              </p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
                 Tags

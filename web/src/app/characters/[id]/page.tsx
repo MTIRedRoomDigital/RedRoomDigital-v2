@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { TestChatModal } from '@/components/TestChatModal';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 
@@ -19,6 +20,7 @@ interface Character {
   dislikes: string[];
   history: { event: string; date?: string; impact?: string }[];
   world_id: string | null;
+  world_name: string | null;
   is_public: boolean;
   is_ai_enabled: boolean;
   tags: string[];
@@ -49,6 +51,7 @@ export default function CharacterDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showChatModal, setShowChatModal] = useState(false);
+  const [showTestChat, setShowTestChat] = useState(false);
   const [myCharacters, setMyCharacters] = useState<MyCharacter[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
 
@@ -172,6 +175,24 @@ export default function CharacterDetailPage() {
             <span>{new Date(character.created_at).toLocaleDateString()}</span>
           </div>
 
+          {/* World Badge */}
+          {character.world_id && character.world_name ? (
+            <div className="mt-3">
+              <Link
+                href={`/worlds/${character.world_id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-purple-900/30 text-purple-300 border border-purple-800/50 rounded-full hover:bg-purple-900/50 transition-colors"
+              >
+                🌍 {character.world_name}
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-slate-700/50 text-slate-400 rounded-full">
+                🌌 Worldless
+              </span>
+            </div>
+          )}
+
           {/* Tags */}
           {character.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mt-3">
@@ -195,12 +216,20 @@ export default function CharacterDetailPage() {
               </button>
             )}
             {isOwner && (
-              <Link
-                href={`/characters/${character.id}/edit`}
-                className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors"
-              >
-                ✏️ Edit Character
-              </Link>
+              <>
+                <button
+                  onClick={() => setShowTestChat(true)}
+                  className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                >
+                  🧪 Test Chat
+                </button>
+                <Link
+                  href={`/characters/${character.id}/edit`}
+                  className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors"
+                >
+                  ✏️ Edit Character
+                </Link>
+              </>
             )}
           </div>
         </div>
@@ -341,6 +370,16 @@ export default function CharacterDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Test Chat Modal */}
+      {showTestChat && character && (
+        <TestChatModal
+          characterId={character.id}
+          characterName={character.name}
+          characterAvatar={character.avatar_url}
+          onClose={() => setShowTestChat(false)}
+        />
+      )}
 
       {/* Character Picker Modal */}
       {showChatModal && (

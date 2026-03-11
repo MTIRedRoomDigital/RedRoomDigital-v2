@@ -13,7 +13,7 @@ conversationRouter.get('/', authenticate, async (req: AuthRequest, res: Response
   try {
     const userId = req.user!.id;
 
-    // Get all conversations where this user participates
+    // Get all conversations where this user participates (exclude test chats)
     const result = await query(
       `SELECT
         conv.id, conv.context, conv.title, conv.is_active, conv.updated_at,
@@ -22,7 +22,7 @@ conversationRouter.get('/', authenticate, async (req: AuthRequest, res: Response
        FROM conversations conv
        JOIN conversation_participants cp ON conv.id = cp.conversation_id
        JOIN characters my_char ON cp.character_id = my_char.id
-       WHERE cp.user_id = $1
+       WHERE cp.user_id = $1 AND (conv.is_test IS NULL OR conv.is_test = false)
        ORDER BY conv.updated_at DESC`,
       [userId]
     );
@@ -130,8 +130,45 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
  */
 conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { character_id, partner_character_id, context, world_id } = req.body;
+    const { character_id, partner_character_id, context, world_id, is_test } = req.body;
 
+    // === TEST CHAT MODE ===
+    // Owner tests their own character — no partner character needed
+    if (is_test && character_id) {
+      const myChar = await query(
+        'SELECT * FROM characters WHERE id = $1 AND creator_id = $2',
+        [character_id, req.user!.id]
+      );
+
+      if (myChar.rows.length === 0) {
+        res.status(403).json({ success: false, message: 'You do not own this character' });
+        return;
+      }
+
+      // Create test conversation
+      const conv = await query(
+        `INSERT INTO conversations (context, world_id, title, is_test)
+         VALUES ($1, $2, $3, true)
+         RETURNING *`,
+        [
+          myChar.rows[0].world_id ? 'within_world' : 'vacuum',
+          myChar.rows[0].world_id || null,
+          `Test: ${myChar.rows[0].name}`,
+        ]
+      );
+
+      // Add the character as a participant (AI-controlled for test)
+      await query(
+        `INSERT INTO conversation_participants (conversation_id, character_id, user_id, is_ai_controlled)
+         VALUES ($1, $2, $3, true)`,
+        [conv.rows[0].id, character_id, req.user!.id]
+      );
+
+      res.status(201).json({ success: true, data: conv.rows[0] });
+      return;
+    }
+
+    // === NORMAL CHAT MODE ===
     if (!character_id || !partner_character_id) {
       res.status(400).json({ success: false, message: 'Both character IDs are required' });
       return;
@@ -164,7 +201,9 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       `SELECT cp1.conversation_id
        FROM conversation_participants cp1
        JOIN conversation_participants cp2 ON cp1.conversation_id = cp2.conversation_id
-       WHERE cp1.character_id = $1 AND cp2.character_id = $2`,
+       JOIN conversations conv ON cp1.conversation_id = conv.id
+       WHERE cp1.character_id = $1 AND cp2.character_id = $2
+       AND (conv.is_test IS NULL OR conv.is_test = false)`,
       [character_id, partner_character_id]
     );
 
@@ -391,14 +430,31 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
       return;
     }
 
-    // Find the AI character (the one NOT owned by this user, or the one flagged as ai_controlled)
-    const aiParticipant = await query(
-      `SELECT cp.character_id, cp.user_id, c.name, c.is_ai_enabled
-       FROM conversation_participants cp
-       JOIN characters c ON cp.character_id = c.id
-       WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
-      [conversationId, userId]
+    // Check if this is a test conversation
+    const convCheck = await query(
+      'SELECT is_test FROM conversations WHERE id = $1',
+      [conversationId]
     );
+    const isTest = convCheck.rows[0]?.is_test;
+
+    // Find the AI character
+    // For test chats: the character IS owned by this user (they're testing their own character)
+    // For normal chats: the character is NOT owned by this user
+    const aiParticipant = isTest
+      ? await query(
+          `SELECT cp.character_id, cp.user_id, c.name, c.is_ai_enabled
+           FROM conversation_participants cp
+           JOIN characters c ON cp.character_id = c.id
+           WHERE cp.conversation_id = $1 AND cp.is_ai_controlled = true`,
+          [conversationId]
+        )
+      : await query(
+          `SELECT cp.character_id, cp.user_id, c.name, c.is_ai_enabled
+           FROM conversation_participants cp
+           JOIN characters c ON cp.character_id = c.id
+           WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+          [conversationId, userId]
+        );
 
     if (aiParticipant.rows.length === 0) {
       res.status(400).json({ success: false, message: 'No partner character found' });
@@ -407,7 +463,7 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
 
     const aiChar = aiParticipant.rows[0];
 
-    if (!aiChar.is_ai_enabled) {
+    if (!aiChar.is_ai_enabled && !isTest) {
       res.status(400).json({ success: false, message: `${aiChar.name} does not have AI enabled` });
       return;
     }
@@ -420,7 +476,7 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
 
     // Get recent messages for context
     const recentMessages = await query(
-      `SELECT m.content, m.sender_character_id, c.name AS sender_name
+      `SELECT m.content, m.sender_character_id, m.sender_type, c.name AS sender_name
        FROM messages m
        JOIN characters c ON m.sender_character_id = c.id
        WHERE m.conversation_id = $1
@@ -432,7 +488,8 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
     const aiResponse = await generateAIResponse(
       aiChar.character_id,
       conversationId,
-      recentMessages.rows
+      recentMessages.rows,
+      isTest
     );
 
     // Save the AI message
@@ -481,5 +538,89 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
         ? 'AI API key is invalid or missing'
         : 'Failed to generate AI response',
     });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/test-message
+ * Send a message in a TEST conversation (user talks as themselves, not as a character)
+ */
+conversationRouter.post('/:id/test-message', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { content } = req.body;
+    const conversationId = req.params.id;
+    const userId = req.user!.id;
+
+    if (!content) {
+      res.status(400).json({ success: false, message: 'Message content is required' });
+      return;
+    }
+
+    // Verify this is a test conversation and user is a participant
+    const conv = await query(
+      `SELECT conv.is_test, cp.character_id
+       FROM conversations conv
+       JOIN conversation_participants cp ON conv.id = cp.conversation_id
+       WHERE conv.id = $1 AND cp.user_id = $2 AND conv.is_test = true`,
+      [conversationId, userId]
+    );
+
+    if (conv.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'Not a valid test conversation' });
+      return;
+    }
+
+    const characterId = conv.rows[0].character_id;
+
+    // Insert message (uses character_id as sender since it's NOT NULL, but sender_type = 'user')
+    const result = await query(
+      `INSERT INTO messages (conversation_id, sender_character_id, sender_user_id, sender_type, content)
+       VALUES ($1, $2, $3, 'user', $4)
+       RETURNING *`,
+      [conversationId, characterId, userId, content]
+    );
+
+    // Return with "You" as sender name for test messages
+    const msg = result.rows[0];
+    res.status(201).json({
+      success: true,
+      data: {
+        ...msg,
+        sender_name: 'You',
+        sender_avatar: null,
+      },
+    });
+  } catch (error: any) {
+    console.error('Test message error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * DELETE /api/conversations/:id
+ * Delete a test conversation (only test conversations can be deleted)
+ */
+conversationRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    // Only allow deleting test conversations that belong to this user
+    const conv = await query(
+      `SELECT conv.id FROM conversations conv
+       JOIN conversation_participants cp ON conv.id = cp.conversation_id
+       WHERE conv.id = $1 AND cp.user_id = $2 AND conv.is_test = true`,
+      [req.params.id, userId]
+    );
+
+    if (conv.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Test conversation not found' });
+      return;
+    }
+
+    await query('DELETE FROM conversations WHERE id = $1', [req.params.id]);
+    res.json({ success: true, message: 'Test conversation deleted' });
+  } catch (error: any) {
+    console.error('Delete conversation error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
