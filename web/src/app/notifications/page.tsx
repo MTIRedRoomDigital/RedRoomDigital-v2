@@ -17,6 +17,7 @@ interface Notification {
 
 const typeIcons: Record<string, string> = {
   friend_request: '👤',
+  friend_accepted: '🤝',
   chat_message: '💬',
   quest_invite: '⚔️',
   ai_transcript: '🤖',
@@ -52,6 +53,41 @@ export default function NotificationsPage() {
   const markAllRead = async () => {
     await api.put('/api/notifications/read-all', {});
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  };
+
+  const handleNotificationClick = async (n: Notification) => {
+    // Mark as read first
+    if (!n.is_read) await markRead(n.id);
+
+    // Navigate based on notification type
+    switch (n.type) {
+      case 'friend_request':
+      case 'friend_accepted':
+        if (n.data?.fromUserId) {
+          router.push(`/users/${n.data.fromUserId}`);
+        }
+        break;
+      case 'chat_message':
+        if (n.data?.conversationId) {
+          router.push(`/chats/${n.data.conversationId}`);
+        }
+        break;
+      case 'quest_invite':
+        // Future: navigate to quest page
+        break;
+      case 'world_invite':
+        // Future: navigate to world page
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Check if a notification type has a navigation target
+  const isActionable = (n: Notification) => {
+    if ((n.type === 'friend_request' || n.type === 'friend_accepted') && n.data?.fromUserId) return true;
+    if (n.type === 'chat_message' && n.data?.conversationId) return true;
+    return false;
   };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
@@ -103,10 +139,10 @@ export default function NotificationsPage() {
           {notifications.map((n) => (
             <div
               key={n.id}
-              onClick={() => !n.is_read && markRead(n.id)}
+              onClick={() => handleNotificationClick(n)}
               className={`p-4 rounded-xl border cursor-pointer transition-all ${
                 n.is_read
-                  ? 'bg-slate-800/50 border-slate-700/50'
+                  ? 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
                   : 'bg-slate-800 border-red-500/30 hover:border-red-500/50'
               }`}
             >
@@ -125,7 +161,14 @@ export default function NotificationsPage() {
                     <p className="text-xs text-slate-500 mt-0.5">{n.body}</p>
                   )}
                 </div>
-                <span className="text-xs text-slate-600 shrink-0">{timeAgo(n.created_at)}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-slate-600">{timeAgo(n.created_at)}</span>
+                  {isActionable(n) && (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
               </div>
             </div>
           ))}

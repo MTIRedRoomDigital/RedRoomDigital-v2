@@ -30,10 +30,17 @@ interface ProfileData {
   worlds: unknown[];
 }
 
+interface FriendData {
+  friendship_id: string;
+  friend_id: string;
+  username: string;
+}
+
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [friendCount, setFriendCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,9 +50,16 @@ export default function ProfilePage() {
     }
 
     if (user) {
-      api.get<ProfileData>('/api/users/profile').then((res) => {
-        if (res.success && res.data) {
-          setProfile(res.data);
+      // Fetch profile and friend count in parallel
+      Promise.all([
+        api.get<ProfileData>('/api/users/profile'),
+        api.get<{ data: FriendData[] }>('/api/friends'),
+      ]).then(([profileRes, friendsRes]) => {
+        if (profileRes.success && profileRes.data) {
+          setProfile(profileRes.data);
+        }
+        if (friendsRes.success && friendsRes.data) {
+          setFriendCount(((friendsRes.data as any).data || []).length);
         }
         setLoading(false);
       });
@@ -106,7 +120,7 @@ export default function ProfilePage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center">
           <div className="text-2xl font-bold text-white">{profile.characters.length}</div>
           <div className="text-sm text-slate-400">Characters</div>
@@ -115,6 +129,10 @@ export default function ProfilePage() {
           <div className="text-2xl font-bold text-white">{profile.worlds.length}</div>
           <div className="text-sm text-slate-400">Worlds</div>
         </div>
+        <Link href="/friends" className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center hover:border-red-500/50 transition-colors">
+          <div className="text-2xl font-bold text-white">{friendCount}</div>
+          <div className="text-sm text-slate-400">Friends</div>
+        </Link>
         <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center">
           <div className="text-2xl font-bold text-white">{profile.kayfabe_strikes}</div>
           <div className="text-sm text-slate-400">Kayfabe Strikes</div>

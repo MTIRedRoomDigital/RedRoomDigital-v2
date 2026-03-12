@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
+import { connectSocket } from '@/lib/socket';
 
 export function Navbar() {
   const { user, loading, logout } = useAuth();
@@ -23,6 +24,24 @@ export function Navbar() {
     fetchCount();
     const interval = setInterval(fetchCount, 30000);
     return () => clearInterval(interval);
+  }, [user]);
+
+  // Real-time notification updates via Socket.IO
+  useEffect(() => {
+    if (!user) return;
+
+    const socket = connectSocket();
+
+    const handleNotification = () => {
+      // Increment badge count instantly when a notification arrives
+      setUnreadCount((prev) => prev + 1);
+    };
+
+    socket.on('notification', handleNotification);
+
+    return () => {
+      socket.off('notification', handleNotification);
+    };
   }, [user]);
 
   return (
@@ -110,6 +129,9 @@ export function Navbar() {
                   </Link>
                   <Link href="/worlds" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
                     My Worlds
+                  </Link>
+                  <Link href="/friends" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+                    My Friends
                   </Link>
                   <Link href="/chats" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
                     My Chats
@@ -204,6 +226,9 @@ export function Navbar() {
               </Link>
               <Link href="/characters" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
                 My Characters
+              </Link>
+              <Link href="/friends" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
+                My Friends
               </Link>
               <Link href="/chats" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
                 My Chats

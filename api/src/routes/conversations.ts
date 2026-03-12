@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { generateAIResponse } from '../services/ai';
+import { createNotification } from '../services/notifications';
 
 export const conversationRouter = Router();
 
@@ -247,6 +248,20 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       [character_id, partner_character_id]
     );
 
+    // Notify the partner user about the new conversation
+    await createNotification({
+      userId: partnerChar.rows[0].owner_id,
+      type: 'chat_message',
+      title: 'New Conversation',
+      body: `${myChar.rows[0].name} wants to chat with ${partnerChar.rows[0].name}`,
+      data: {
+        conversationId: conv.rows[0].id,
+        fromCharacterName: myChar.rows[0].name,
+        toCharacterName: partnerChar.rows[0].name,
+      },
+      io: req.app.get('io'),
+    });
+
     res.status(201).json({ success: true, data: conv.rows[0] });
   } catch (error: any) {
     console.error('Create conversation error:', error.message);
@@ -394,6 +409,41 @@ conversationRouter.post('/:id/messages', authenticate, async (req: AuthRequest, 
     const io = req.app.get('io');
     if (io) {
       io.to(`conversation:${req.params.id}`).emit('new_message', fullMessage.rows[0]);
+    }
+
+    // Send throttled notification to other participants
+    // Only creates a notification if there isn't an unread one for this conversation from the last 5 minutes
+    try {
+      const otherParticipants = await query(
+        `SELECT cp.user_id FROM conversation_participants cp
+         WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+        [req.params.id, req.user!.id]
+      );
+
+      for (const participant of otherParticipants.rows) {
+        const recentNotif = await query(
+          `SELECT id FROM notifications
+           WHERE user_id = $1 AND type = 'chat_message' AND is_read = FALSE
+           AND data->>'conversationId' = $2
+           AND created_at > NOW() - INTERVAL '5 minutes'
+           LIMIT 1`,
+          [participant.user_id, req.params.id]
+        );
+
+        if (recentNotif.rows.length === 0) {
+          await createNotification({
+            userId: participant.user_id,
+            type: 'chat_message',
+            title: 'New Message',
+            body: `${fullMessage.rows[0].sender_name}: ${content.substring(0, 100)}`,
+            data: { conversationId: req.params.id },
+            io,
+          });
+        }
+      }
+    } catch (notifErr: any) {
+      // Don't fail the message send if notification creation fails
+      console.error('Chat notification error:', notifErr.message);
     }
 
     res.status(201).json({ success: true, data: fullMessage.rows[0] });

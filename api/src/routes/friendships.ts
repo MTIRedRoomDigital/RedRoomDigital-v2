@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { createNotification } from '../services/notifications';
 
 const router = Router();
 
@@ -101,12 +102,15 @@ router.post('/request/:userId', authenticate, async (req: AuthRequest, res: Resp
       [myId, targetId]
     );
 
-    // Create notification for the target user
-    await query(
-      `INSERT INTO notifications (user_id, type, title, body, data)
-       VALUES ($1, 'friend_request', 'New Friend Request', $2, $3)`,
-      [targetId, `${req.user!.username} sent you a friend request`, JSON.stringify({ fromUserId: myId })]
-    );
+    // Create notification for the target user (real-time via Socket.IO)
+    await createNotification({
+      userId: targetId,
+      type: 'friend_request',
+      title: 'New Friend Request',
+      body: `${req.user!.username} sent you a friend request`,
+      data: { fromUserId: myId },
+      io: req.app.get('io'),
+    });
 
     res.status(201).json({ success: true, message: 'Friend request sent' });
   } catch (err) {
@@ -133,13 +137,15 @@ router.put('/:friendshipId/accept', authenticate, async (req: AuthRequest, res: 
       return;
     }
 
-    // Notify requester
-    await query(
-      `INSERT INTO notifications (user_id, type, title, body, data)
-       VALUES ($1, 'friend_request', 'Friend Request Accepted', $2, $3)`,
-      [result.rows[0].requester_id, `${req.user!.username} accepted your friend request!`,
-       JSON.stringify({ fromUserId: req.user!.id })]
-    );
+    // Notify requester (uses 'friend_accepted' type so frontend can differentiate)
+    await createNotification({
+      userId: result.rows[0].requester_id,
+      type: 'friend_accepted',
+      title: 'Friend Request Accepted',
+      body: `${req.user!.username} accepted your friend request!`,
+      data: { fromUserId: req.user!.id },
+      io: req.app.get('io'),
+    });
 
     res.json({ success: true, message: 'Friend request accepted' });
   } catch (err) {
