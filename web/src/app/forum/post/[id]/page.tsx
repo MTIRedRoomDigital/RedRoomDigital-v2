@@ -116,7 +116,7 @@ export default function PostPage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-medium text-white">{post.author_name}</span>
+              <Link href={`/users/${post.author_id}`} className="font-medium text-white hover:text-red-400 transition-colors">{post.author_name}</Link>
               {tierBadge(post.author_subscription) && (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${tierBadge(post.author_subscription)!.bg} ${tierBadge(post.author_subscription)!.color}`}>
                   {tierBadge(post.author_subscription)!.label}
@@ -154,9 +154,9 @@ export default function PostPage() {
                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
                   {reply.author_name[0].toUpperCase()}
                 </div>
-                <span className={`text-sm font-medium ${reply.author_subscription === 'premium' ? 'text-amber-400' : reply.author_subscription === 'ultimate' ? 'text-purple-400' : 'text-slate-300'}`}>
+                <Link href={`/users/${reply.author_id}`} className={`text-sm font-medium hover:text-red-400 transition-colors ${reply.author_subscription === 'premium' ? 'text-amber-400' : reply.author_subscription === 'ultimate' ? 'text-purple-400' : 'text-slate-300'}`}>
                   {reply.author_name}
-                </span>
+                </Link>
                 <span className="text-xs text-slate-600">{formatDate(reply.created_at)}</span>
               </div>
               <p className="text-sm text-slate-300 whitespace-pre-wrap pl-9">{reply.content}</p>

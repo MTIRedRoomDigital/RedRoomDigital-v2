@@ -44,14 +44,14 @@ export default function FriendsPage() {
 
     // Fetch both friends and pending requests in parallel
     Promise.all([
-      api.get<{ data: Friend[] }>('/api/friends'),
-      api.get<{ data: PendingRequest[] }>('/api/friends/pending'),
+      api.get<Friend[]>('/api/friends'),
+      api.get<PendingRequest[]>('/api/friends/pending'),
     ]).then(([friendsRes, pendingRes]) => {
       if (friendsRes.success && friendsRes.data) {
-        setFriends((friendsRes.data as any).data || []);
+        setFriends(friendsRes.data as any);
       }
       if (pendingRes.success && pendingRes.data) {
-        setPending((pendingRes.data as any).data || []);
+        setPending(pendingRes.data as any);
       }
       setLoading(false);
     });

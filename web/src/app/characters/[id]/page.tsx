@@ -168,7 +168,7 @@ export default function CharacterDetailPage() {
           )}
 
           <div className="flex items-center gap-4 text-sm text-slate-400">
-            <span>Created by <strong className="text-slate-300">{character.creator_name}</strong></span>
+            <span>Created by <Link href={`/users/${character.creator_id}`} className="font-bold text-slate-300 hover:text-red-400 transition-colors">{character.creator_name}</Link></span>
             <span>•</span>
             <span>{character.chat_count} chats</span>
             <span>•</span>

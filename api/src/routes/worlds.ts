@@ -107,7 +107,7 @@ worldRouter.get('/:id', async (req: Request, res: Response) => {
     // Get characters in this world
     const characters = await query(
       `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count,
-              u.username AS creator_name
+              c.creator_id, u.username AS creator_name
        FROM characters c
        JOIN users u ON c.creator_id = u.id
        WHERE c.world_id = $1 AND c.is_public = true

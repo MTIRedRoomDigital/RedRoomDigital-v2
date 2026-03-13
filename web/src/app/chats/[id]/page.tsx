@@ -306,9 +306,21 @@ export default function ChatRoomPage() {
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
                 {ctx.label}
               </span>
+              {partnerParticipant?.is_ai_controlled ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-900/30 text-purple-400 border border-purple-800/50">
+                  🤖 AI
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50">
+                  Live
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
               Chatting as <span className="text-slate-400">{myParticipant?.character_name}</span>
+              {!partnerParticipant?.is_ai_controlled && partnerParticipant?.owner_name && (
+                <span> &middot; <Link href={`/users/${partnerParticipant.user_id}`} className="text-slate-400 hover:text-red-400 transition-colors">{partnerParticipant.owner_name}</Link></span>
+              )}
               {' '}
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-slate-600'}`} />
             </p>
@@ -399,8 +411,8 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {/* AI Response Bar (show when messages exist and partner is AI-enabled) */}
-      {messages.length > 0 && (
+      {/* AI Response Bar (only show for AI-controlled chats, not live player chats) */}
+      {messages.length > 0 && partnerParticipant?.is_ai_controlled && (
         <div className="px-4 py-2 bg-slate-800/50 border-t border-slate-700/50 shrink-0">
           <div className="max-w-3xl mx-auto flex items-center justify-center">
             <button

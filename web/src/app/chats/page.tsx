@@ -20,7 +20,9 @@ interface Conversation {
     character_id: string;
     character_name: string;
     character_avatar: string | null;
+    user_id: string;
     owner_name: string;
+    is_ai_controlled: boolean;
   } | null;
   last_message: {
     content: string;
@@ -52,14 +54,6 @@ export default function ChatsPage() {
     }
   }, [user, authLoading, router]);
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
-        <div className="text-slate-400">Loading conversations...</div>
-      </div>
-    );
-  }
-
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -81,8 +75,92 @@ export default function ChatsPage() {
     multiverse: { label: 'Multiverse', color: 'text-purple-400 bg-purple-900/30' },
   };
 
+  // Split conversations into AI chats and live chats
+  const aiChats = conversations.filter((c) => c.partner?.is_ai_controlled);
+  const liveChats = conversations.filter((c) => !c.partner?.is_ai_controlled);
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+        <div className="text-slate-400">Loading conversations...</div>
+      </div>
+    );
+  }
+
+  const renderConversation = (conv: Conversation) => {
+    const ctx = contextLabels[conv.context] || contextLabels.vacuum;
+    const isAI = conv.partner?.is_ai_controlled;
+
+    return (
+      <Link
+        key={conv.id}
+        href={`/chats/${conv.id}`}
+        className="group flex items-center gap-4 p-4 bg-slate-800 border border-slate-700 rounded-xl hover:border-red-500/50 transition-all"
+      >
+        {/* Partner Avatar */}
+        <div className="relative shrink-0">
+          {conv.partner?.character_avatar ? (
+            <img
+              src={conv.partner.character_avatar}
+              alt={conv.partner.character_name}
+              className="w-12 h-12 rounded-full object-cover"
+            />
+          ) : (
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
+              isAI
+                ? 'bg-gradient-to-br from-purple-500 to-blue-600'
+                : 'bg-gradient-to-br from-red-500 to-amber-500'
+            }`}>
+              {isAI ? '🤖' : '🎭'}
+            </div>
+          )}
+          {conv.unread_count > 0 && (
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">
+              {conv.unread_count > 9 ? '9+' : conv.unread_count}
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
+              {conv.partner?.character_name || 'Unknown'}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
+              {ctx.label}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mb-1">
+            {conv.my_character_name} &harr; {conv.partner?.character_name}
+            {!isAI && conv.partner?.owner_name && (
+              <span className="text-slate-600"> (by {conv.partner.owner_name})</span>
+            )}
+          </p>
+          {conv.last_message ? (
+            <p className="text-sm text-slate-400 truncate">
+              <span className="text-slate-500">{conv.last_message.sender_name}:</span>{' '}
+              {conv.last_message.content}
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500 italic">No messages yet</p>
+          )}
+        </div>
+
+        {/* Time */}
+        <div className="text-xs text-slate-500 shrink-0">
+          {conv.last_message
+            ? formatTime(conv.last_message.created_at)
+            : formatTime(conv.updated_at)}
+        </div>
+      </Link>
+    );
+  };
+
+  const hasAny = conversations.length > 0;
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -97,8 +175,7 @@ export default function ChatsPage() {
         </Link>
       </div>
 
-      {/* Conversations List */}
-      {conversations.length === 0 ? (
+      {!hasAny ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">💬</div>
           <h2 className="text-xl font-bold text-white mb-2">No conversations yet</h2>
@@ -113,63 +190,52 @@ export default function ChatsPage() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-2">
-          {conversations.map((conv) => {
-            const ctx = contextLabels[conv.context] || contextLabels.vacuum;
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Live Chats Column */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-lg">🎭</span>
+              <h2 className="text-lg font-semibold text-white">Live Chats</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50">
+                {liveChats.length}
+              </span>
+            </div>
+            {liveChats.length === 0 ? (
+              <div className="p-6 border border-dashed border-slate-700 rounded-xl text-center">
+                <p className="text-slate-500 text-sm mb-2">No live chats yet</p>
+                <p className="text-xs text-slate-600">
+                  Start a chat with another player&apos;s character from the Explore page
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {liveChats.map(renderConversation)}
+              </div>
+            )}
+          </div>
 
-            return (
-              <Link
-                key={conv.id}
-                href={`/chats/${conv.id}`}
-                className="group flex items-center gap-4 p-4 bg-slate-800 border border-slate-700 rounded-xl hover:border-red-500/50 transition-all"
-              >
-                {/* Partner Avatar */}
-                <div className="relative shrink-0">
-                  <div className="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-2xl">
-                    🎭
-                  </div>
-                  {conv.unread_count > 0 && (
-                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">
-                      {conv.unread_count > 9 ? '9+' : conv.unread_count}
-                    </div>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
-                      {conv.partner?.character_name || 'Unknown'}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
-                      {ctx.label}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mb-1">
-                    {conv.my_character_name} &harr; {conv.partner?.character_name}
-                    {conv.partner?.owner_name && (
-                      <span className="text-slate-600"> (by {conv.partner.owner_name})</span>
-                    )}
-                  </p>
-                  {conv.last_message ? (
-                    <p className="text-sm text-slate-400 truncate">
-                      <span className="text-slate-500">{conv.last_message.sender_name}:</span>{' '}
-                      {conv.last_message.content}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-slate-500 italic">No messages yet</p>
-                  )}
-                </div>
-
-                {/* Time */}
-                <div className="text-xs text-slate-500 shrink-0">
-                  {conv.last_message
-                    ? formatTime(conv.last_message.created_at)
-                    : formatTime(conv.updated_at)}
-                </div>
-              </Link>
-            );
-          })}
+          {/* AI Chats Column */}
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-lg">🤖</span>
+              <h2 className="text-lg font-semibold text-white">AI Chats</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-900/30 text-purple-400 border border-purple-800/50">
+                {aiChats.length}
+              </span>
+            </div>
+            {aiChats.length === 0 ? (
+              <div className="p-6 border border-dashed border-slate-700 rounded-xl text-center">
+                <p className="text-slate-500 text-sm mb-2">No AI chats yet</p>
+                <p className="text-xs text-slate-600">
+                  Characters with AI enabled will respond automatically
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {aiChats.map(renderConversation)}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

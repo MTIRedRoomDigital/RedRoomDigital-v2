@@ -59,7 +59,7 @@ export default function ProfilePage() {
           setProfile(profileRes.data);
         }
         if (friendsRes.success && friendsRes.data) {
-          setFriendCount(((friendsRes.data as any).data || []).length);
+          setFriendCount((friendsRes.data as any).length || 0);
         }
         setLoading(false);
       });

@@ -135,7 +135,7 @@ export default function ExplorePage() {
                     <h3 className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
                       {char.name}
                     </h3>
-                    <p className="text-xs text-slate-500">by {char.creator_name}</p>
+                    <p className="text-xs text-slate-500">by <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/users/${char.creator_id}`; }} className="hover:text-red-400 cursor-pointer transition-colors">{char.creator_name}</span></p>
                   </div>
                 </div>
 

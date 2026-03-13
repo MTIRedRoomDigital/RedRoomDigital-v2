@@ -53,6 +53,7 @@ interface WorldCharacter {
   description: string | null;
   tags: string[];
   chat_count: number;
+  creator_id: string;
   creator_name: string;
 }
 
@@ -187,7 +188,7 @@ export default function WorldDetailPage() {
           )}
 
           <div className="flex items-center gap-4 mt-3 text-sm text-slate-500">
-            <span>Created by <span className="text-slate-300">{world.creator_name}</span></span>
+            <span>Created by <Link href={`/users/${world.creator_id}`} className="text-slate-300 hover:text-red-400 transition-colors">{world.creator_name}</Link></span>
             <span>{new Date(world.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
           </div>
         </div>
@@ -358,7 +359,7 @@ export default function WorldDetailPage() {
                       <h4 className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
                         {char.name}
                       </h4>
-                      <p className="text-xs text-slate-500">by {char.creator_name}</p>
+                      <p className="text-xs text-slate-500">by <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/users/${char.creator_id}`; }} className="hover:text-red-400 cursor-pointer transition-colors">{char.creator_name}</span></p>
                     </div>
                     <span className="text-xs text-slate-500 shrink-0">{char.chat_count} chats</span>
                   </div>
@@ -388,7 +389,7 @@ export default function WorldDetailPage() {
               )}
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-white">{member.username}</span>
+                  <Link href={`/users/${member.user_id}`} className="font-medium text-white hover:text-red-400 transition-colors">{member.username}</Link>
                   {member.is_worldmaster && (
                     <span className="text-xs px-1.5 py-0.5 bg-amber-900/30 text-amber-400 rounded-full">
                       WorldMaster

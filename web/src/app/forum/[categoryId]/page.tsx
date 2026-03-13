@@ -10,6 +10,7 @@ interface Post {
   id: string;
   title: string;
   content: string;
+  author_id: string;
   author_name: string;
   author_avatar: string | null;
   author_subscription: string;
@@ -189,7 +190,7 @@ export default function CategoryPage() {
                     {post.is_locked && <span className="text-xs text-slate-500">🔒</span>}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                    <span className={tierColor(post.author_subscription)}>{post.author_name}</span>
+                    <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/users/${post.author_id}`; }} className={`${tierColor(post.author_subscription)} hover:text-red-400 cursor-pointer transition-colors`}>{post.author_name}</span>
                     <span>{timeAgo(post.created_at)}</span>
                     <span>{post.reply_count} replies</span>
                     <span>{post.view_count} views</span>
