@@ -17,7 +17,7 @@ conversationRouter.get('/', authenticate, async (req: AuthRequest, res: Response
     // Get all conversations where this user participates (exclude test chats)
     const result = await query(
       `SELECT
-        conv.id, conv.context, conv.title, conv.is_active, conv.updated_at,
+        conv.id, conv.context, conv.title, conv.is_active, conv.updated_at, conv.chat_mode,
         cp.character_id AS my_character_id, cp.unread_count,
         my_char.name AS my_character_name, my_char.avatar_url AS my_character_avatar
        FROM conversations conv
@@ -131,7 +131,7 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
  */
 conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { character_id, partner_character_id, context, world_id, is_test } = req.body;
+    const { character_id, partner_character_id, context, world_id, is_test, chat_mode } = req.body;
 
     // === TEST CHAT MODE ===
     // Owner tests their own character — no partner character needed
@@ -218,15 +218,29 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       return;
     }
 
-    // Create conversation
+    // Determine chat mode and AI control settings
+    const mode = chat_mode || 'live'; // 'ai' | 'live' | 'ai_fallback'
+    const isAIControlled = mode === 'ai' || mode === 'ai_fallback';
+
+    // Validate: AI modes require is_ai_enabled on the partner character
+    if (isAIControlled && !partnerChar.rows[0].is_ai_enabled) {
+      res.status(400).json({
+        success: false,
+        message: `${partnerChar.rows[0].name} does not have AI enabled. Only live chat is available.`,
+      });
+      return;
+    }
+
+    // Create conversation with chat_mode
     const conv = await query(
-      `INSERT INTO conversations (context, world_id, title)
-       VALUES ($1, $2, $3)
+      `INSERT INTO conversations (context, world_id, title, chat_mode)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [
         context || 'vacuum',
         world_id || null,
         `${myChar.rows[0].name} & ${partnerChar.rows[0].name}`,
+        mode,
       ]
     );
 
@@ -240,7 +254,7 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
     await query(
       `INSERT INTO conversation_participants (conversation_id, character_id, user_id, is_ai_controlled)
        VALUES ($1, $2, $3, $4)`,
-      [conv.rows[0].id, partner_character_id, partnerChar.rows[0].owner_id, false]
+      [conv.rows[0].id, partner_character_id, partnerChar.rows[0].owner_id, isAIControlled]
     );
 
     // Update chat counts for both characters
@@ -248,19 +262,39 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       [character_id, partner_character_id]
     );
 
-    // Notify the partner user about the new conversation
-    await createNotification({
-      userId: partnerChar.rows[0].owner_id,
-      type: 'chat_message',
-      title: 'New Conversation',
-      body: `${myChar.rows[0].name} wants to chat with ${partnerChar.rows[0].name}`,
-      data: {
-        conversationId: conv.rows[0].id,
-        fromCharacterName: myChar.rows[0].name,
-        toCharacterName: partnerChar.rows[0].name,
-      },
-      io: req.app.get('io'),
-    });
+    // Notification logic depends on chat_mode:
+    // - 'ai': Pure AI chat — do NOT notify the partner user
+    // - 'live': Live chat — notify partner that someone is chatting
+    // - 'ai_fallback': AI responding until partner takes over — send chat_request
+    if (mode === 'live') {
+      await createNotification({
+        userId: partnerChar.rows[0].owner_id,
+        type: 'chat_message',
+        title: 'New Live Chat',
+        body: `${myChar.rows[0].name} is chatting with ${partnerChar.rows[0].name}`,
+        data: {
+          conversationId: conv.rows[0].id,
+          fromCharacterName: myChar.rows[0].name,
+          toCharacterName: partnerChar.rows[0].name,
+        },
+        io: req.app.get('io'),
+      });
+    } else if (mode === 'ai_fallback') {
+      await createNotification({
+        userId: partnerChar.rows[0].owner_id,
+        type: 'chat_request',
+        title: 'Chat Request',
+        body: `${myChar.rows[0].name} wants to chat with ${partnerChar.rows[0].name}. AI is responding until you take over!`,
+        data: {
+          conversationId: conv.rows[0].id,
+          fromCharacterName: myChar.rows[0].name,
+          toCharacterName: partnerChar.rows[0].name,
+          chatMode: 'ai_fallback',
+        },
+        io: req.app.get('io'),
+      });
+    }
+    // mode === 'ai' → no notification sent
 
     res.status(201).json({ success: true, data: conv.rows[0] });
   } catch (error: any) {
@@ -480,12 +514,19 @@ conversationRouter.post('/:id/ai-response', authenticate, async (req: AuthReques
       return;
     }
 
-    // Check if this is a test conversation
+    // Check if this is a test conversation and get chat_mode
     const convCheck = await query(
-      'SELECT is_test FROM conversations WHERE id = $1',
+      'SELECT is_test, chat_mode FROM conversations WHERE id = $1',
       [conversationId]
     );
     const isTest = convCheck.rows[0]?.is_test;
+    const chatMode = convCheck.rows[0]?.chat_mode;
+
+    // Reject AI generation if the conversation is a live chat (someone took over)
+    if (!isTest && chatMode === 'live') {
+      res.status(400).json({ success: false, message: 'This is a live chat — AI responses are not available.' });
+      return;
+    }
 
     // Find the AI character
     // For test chats: the character IS owned by this user (they're testing their own character)
@@ -671,6 +712,68 @@ conversationRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Re
     res.json({ success: true, message: 'Test conversation deleted' });
   } catch (error: any) {
     console.error('Delete conversation error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/takeover
+ * User B takes over from AI in an ai_fallback conversation.
+ * Transitions chat_mode from 'ai_fallback' to 'live'.
+ *
+ * HOW THIS WORKS:
+ * 1. User A starts a chat with User B's character, but User B is offline
+ * 2. AI responds as User B's character temporarily (chat_mode = 'ai_fallback')
+ * 3. User B comes online, clicks the notification, sees the conversation
+ * 4. User B clicks "Take Over" → this endpoint is called
+ * 5. chat_mode changes to 'live', is_ai_controlled becomes false
+ * 6. A socket event notifies User A that the chat is now live
+ */
+conversationRouter.post('/:id/takeover', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+
+    // 1. Verify user is a participant
+    const participant = await query(
+      'SELECT id, character_id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+
+    if (participant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You are not in this conversation' });
+      return;
+    }
+
+    // 2. Verify conversation is in ai_fallback mode
+    const conv = await query('SELECT chat_mode FROM conversations WHERE id = $1', [conversationId]);
+    if (conv.rows[0]?.chat_mode !== 'ai_fallback') {
+      res.status(400).json({ success: false, message: 'This conversation is not in AI fallback mode' });
+      return;
+    }
+
+    // 3. Update conversation mode to 'live'
+    await query('UPDATE conversations SET chat_mode = $1 WHERE id = $2', ['live', conversationId]);
+
+    // 4. Update participant's is_ai_controlled to false
+    await query(
+      'UPDATE conversation_participants SET is_ai_controlled = false WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+
+    // 5. Emit socket event so the other user sees the transition in real-time
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('chat_mode_changed', {
+        conversationId,
+        newMode: 'live',
+        takenOverBy: userId,
+      });
+    }
+
+    res.json({ success: true, data: { chat_mode: 'live' } });
+  } catch (error: any) {
+    console.error('Takeover error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

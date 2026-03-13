@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { getUserStatus } from '../services/presence';
 
 export const userRouter = Router();
 
@@ -150,6 +151,19 @@ userRouter.get('/search', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Search error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/users/:id/presence
+ * Get a user's online status (online / away / offline)
+ */
+userRouter.get('/:id/presence', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const status = getUserStatus(req.params.id);
+    res.json({ success: true, data: { userId: req.params.id, status } });
+  } catch (error: any) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

@@ -12,6 +12,7 @@ interface Conversation {
   title: string;
   is_active: boolean;
   updated_at: string;
+  chat_mode: 'ai' | 'live' | 'ai_fallback';
   my_character_id: string;
   my_character_name: string;
   my_character_avatar: string | null;
@@ -75,9 +76,10 @@ export default function ChatsPage() {
     multiverse: { label: 'Multiverse', color: 'text-purple-400 bg-purple-900/30' },
   };
 
-  // Split conversations into AI chats and live chats
-  const aiChats = conversations.filter((c) => c.partner?.is_ai_controlled);
-  const liveChats = conversations.filter((c) => !c.partner?.is_ai_controlled);
+  // Split conversations by chat mode
+  // ai_fallback chats go in the Live column since they're intended to become live
+  const liveChats = conversations.filter((c) => c.chat_mode === 'live' || c.chat_mode === 'ai_fallback');
+  const aiChats = conversations.filter((c) => c.chat_mode === 'ai');
 
   if (authLoading || loading) {
     return (
@@ -89,7 +91,8 @@ export default function ChatsPage() {
 
   const renderConversation = (conv: Conversation) => {
     const ctx = contextLabels[conv.context] || contextLabels.vacuum;
-    const isAI = conv.partner?.is_ai_controlled;
+    const isAI = conv.chat_mode === 'ai';
+    const isFallback = conv.chat_mode === 'ai_fallback';
 
     return (
       <Link
@@ -109,9 +112,11 @@ export default function ChatsPage() {
             <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
               isAI
                 ? 'bg-gradient-to-br from-purple-500 to-blue-600'
+                : isFallback
+                ? 'bg-gradient-to-br from-amber-500 to-orange-600'
                 : 'bg-gradient-to-br from-red-500 to-amber-500'
             }`}>
-              {isAI ? '🤖' : '🎭'}
+              {isAI ? '🤖' : isFallback ? '⏳' : '🎭'}
             </div>
           )}
           {conv.unread_count > 0 && (
@@ -130,6 +135,11 @@ export default function ChatsPage() {
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
               {ctx.label}
             </span>
+            {isFallback && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-800/50">
+                AI Fallback
+              </span>
+            )}
           </div>
           <p className="text-xs text-slate-500 mb-1">
             {conv.my_character_name} &harr; {conv.partner?.character_name}

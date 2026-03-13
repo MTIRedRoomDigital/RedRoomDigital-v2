@@ -1,5 +1,6 @@
 import { Server as SocketServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { userConnected, userDisconnected, userActivity } from '../services/presence';
 
 /**
  * WebSocket Setup (Socket.IO)
@@ -11,8 +12,10 @@ import jwt from 'jsonwebtoken';
  * 4. When someone sends a message, it's broadcast to everyone in that room
  * 5. Typing indicators and status updates also go through here
  *
- * Think of it like walkie-talkies — everyone tuned to the same channel
- * hears the same messages in real-time.
+ * PRESENCE TRACKING:
+ * - On connect: mark user as online
+ * - On disconnect: mark user as offline (when all tabs closed)
+ * - On heartbeat/typing: update last activity (for "away" detection)
  */
 export function setupSocket(io: SocketServer) {
   // Authenticate socket connections
@@ -41,10 +44,14 @@ export function setupSocket(io: SocketServer) {
     // Join user's personal room (for notifications)
     socket.join(`user:${userId}`);
 
+    // Track presence — mark user as online
+    userConnected(userId, socket.id);
+
     // Join a conversation room
     socket.on('join_conversation', (conversationId: string) => {
       socket.join(`conversation:${conversationId}`);
       console.log(`👤 User ${userId} joined conversation ${conversationId}`);
+      userActivity(userId);
     });
 
     // Leave a conversation room
@@ -58,6 +65,7 @@ export function setupSocket(io: SocketServer) {
         userId,
         characterName: data.characterName,
       });
+      userActivity(userId);
     });
 
     // Stop typing
@@ -67,8 +75,14 @@ export function setupSocket(io: SocketServer) {
       });
     });
 
-    // Handle disconnect
+    // Heartbeat — client sends this every 60 seconds to stay "online" (not "away")
+    socket.on('heartbeat', () => {
+      userActivity(userId);
+    });
+
+    // Handle disconnect — remove socket from presence tracking
     socket.on('disconnect', () => {
+      userDisconnected(userId, socket.id);
       console.log(`🔌 User disconnected: ${userId}`);
     });
   });

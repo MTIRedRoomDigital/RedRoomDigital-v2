@@ -34,6 +34,7 @@ interface ConversationData {
   title: string;
   is_active: boolean;
   world_id: string | null;
+  chat_mode: 'ai' | 'live' | 'ai_fallback';
   participants: Participant[];
 }
 
@@ -51,6 +52,7 @@ export default function ChatRoomPage() {
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [chatLimitHit, setChatLimitHit] = useState(false);
+  const [takingOver, setTakingOver] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -59,6 +61,12 @@ export default function ChatRoomPage() {
   // Find which character belongs to the current user in this conversation
   const myParticipant = conversation?.participants.find((p) => p.user_id === user?.id);
   const partnerParticipant = conversation?.participants.find((p) => p.user_id !== user?.id);
+
+  // Can this user take over from AI? (User B sees this when their character is AI-controlled in ai_fallback)
+  const canTakeOver = conversation?.chat_mode === 'ai_fallback' && myParticipant?.is_ai_controlled;
+
+  // Should AI response button show? (for AI and AI Fallback modes, but NOT for the user who can take over)
+  const showAIButton = (conversation?.chat_mode === 'ai' || conversation?.chat_mode === 'ai_fallback') && !canTakeOver;
 
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -131,11 +139,31 @@ export default function ChatRoomPage() {
       setTypingUser(null);
     });
 
+    // Listen for chat mode changes (takeover: ai_fallback → live)
+    socket.on('chat_mode_changed', (data: { conversationId: string; newMode: string }) => {
+      if (data.conversationId === id) {
+        setConversation((prev) =>
+          prev
+            ? {
+                ...prev,
+                chat_mode: data.newMode as ConversationData['chat_mode'],
+                participants: prev.participants.map((p) => ({
+                  ...p,
+                  // When mode switches to 'live', AI-controlled participants become human-controlled
+                  is_ai_controlled: data.newMode === 'live' ? false : p.is_ai_controlled,
+                })),
+              }
+            : null
+        );
+      }
+    });
+
     return () => {
       socket.emit('leave_conversation', id);
       socket.off('new_message');
       socket.off('user_typing');
       socket.off('user_stop_typing');
+      socket.off('chat_mode_changed');
     };
   }, [user, id, conversation]);
 
@@ -190,9 +218,8 @@ export default function ChatRoomPage() {
       const errData = res as any;
       if (errData.chatLimit) {
         setChatLimitHit(true);
-        // Remove the optimistic message since it wasn't actually sent
         setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id));
-        setNewMessage(content); // Put the message back in the input
+        setNewMessage(content);
       }
     }
 
@@ -207,8 +234,6 @@ export default function ChatRoomPage() {
     const res = await api.post<Message>(`/api/conversations/${id}/ai-response`, {});
 
     if (res.success && res.data) {
-      // The socket will deliver the message, but if we're the sender's owner
-      // we need to add it manually since our socket filter blocks own-user messages
       setMessages((prev) => {
         const msg = res.data as Message;
         if (prev.some((m) => m.id === msg.id)) return prev;
@@ -221,6 +246,32 @@ export default function ChatRoomPage() {
     setGeneratingAI(false);
   };
 
+  // Take over from AI (User B clicks this to go live)
+  const handleTakeOver = async () => {
+    if (takingOver) return;
+    setTakingOver(true);
+
+    const res = await api.post(`/api/conversations/${id}/takeover`, {});
+    if (res.success) {
+      // Optimistic update — the socket event will also fire
+      setConversation((prev) =>
+        prev
+          ? {
+              ...prev,
+              chat_mode: 'live',
+              participants: prev.participants.map((p) =>
+                p.user_id === user?.id ? { ...p, is_ai_controlled: false } : p
+              ),
+            }
+          : null
+      );
+    } else {
+      alert((res as any).message || 'Failed to take over');
+    }
+
+    setTakingOver(false);
+  };
+
   // Handle typing indicator
   const handleTyping = () => {
     const socket = getSocket();
@@ -231,10 +282,8 @@ export default function ChatRoomPage() {
       characterName: myParticipant.character_name,
     });
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    // Stop typing after 2 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
       socket.emit('stop_typing', { conversationId: id });
     }, 2000);
@@ -284,6 +333,7 @@ export default function ChatRoomPage() {
   }
 
   const ctx = contextLabels[conversation.context] || contextLabels.vacuum;
+  const chatMode = conversation.chat_mode || 'live';
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -306,9 +356,14 @@ export default function ChatRoomPage() {
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
                 {ctx.label}
               </span>
-              {partnerParticipant?.is_ai_controlled ? (
+              {/* Chat mode badge */}
+              {chatMode === 'ai' ? (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-900/30 text-purple-400 border border-purple-800/50">
                   🤖 AI
+                </span>
+              ) : chatMode === 'ai_fallback' ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-800/50">
+                  🤖 AI Fallback
                 </span>
               ) : (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50">
@@ -318,7 +373,7 @@ export default function ChatRoomPage() {
             </div>
             <p className="text-xs text-slate-500">
               Chatting as <span className="text-slate-400">{myParticipant?.character_name}</span>
-              {!partnerParticipant?.is_ai_controlled && partnerParticipant?.owner_name && (
+              {chatMode === 'live' && partnerParticipant?.owner_name && (
                 <span> &middot; <Link href={`/users/${partnerParticipant.user_id}`} className="text-slate-400 hover:text-red-400 transition-colors">{partnerParticipant.owner_name}</Link></span>
               )}
               {' '}
@@ -327,6 +382,38 @@ export default function ChatRoomPage() {
           </div>
         </div>
       </div>
+
+      {/* AI Fallback Banner — shows for both users with different content */}
+      {chatMode === 'ai_fallback' && (
+        <div className="px-4 py-3 bg-amber-900/20 border-b border-amber-800/50 shrink-0">
+          <div className="max-w-3xl mx-auto flex items-center justify-between">
+            {canTakeOver ? (
+              <>
+                <div>
+                  <p className="text-sm text-amber-400 font-medium">AI is responding as your character</p>
+                  <p className="text-xs text-slate-400">Take control to chat live as {myParticipant?.character_name}</p>
+                </div>
+                <button
+                  onClick={handleTakeOver}
+                  disabled={takingOver}
+                  className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white rounded-lg transition-colors shrink-0 ml-4 font-semibold"
+                >
+                  {takingOver ? 'Taking over...' : '🎮 Take Over'}
+                </button>
+              </>
+            ) : (
+              <div>
+                <p className="text-sm text-amber-400 font-medium">
+                  AI is responding as {partnerParticipant?.character_name}
+                </p>
+                <p className="text-xs text-slate-400">
+                  Waiting for {partnerParticipant?.owner_name} to take over
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -411,8 +498,8 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {/* AI Response Bar (only show for AI-controlled chats, not live player chats) */}
-      {messages.length > 0 && partnerParticipant?.is_ai_controlled && (
+      {/* AI Response Bar (show for AI and AI Fallback modes, not for the user who can take over) */}
+      {messages.length > 0 && showAIButton && (
         <div className="px-4 py-2 bg-slate-800/50 border-t border-slate-700/50 shrink-0">
           <div className="max-w-3xl mx-auto flex items-center justify-center">
             <button

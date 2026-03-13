@@ -51,9 +51,13 @@ export default function CharacterDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showChatModal, setShowChatModal] = useState(false);
+  const [showModeModal, setShowModeModal] = useState(false);
   const [showTestChat, setShowTestChat] = useState(false);
   const [myCharacters, setMyCharacters] = useState<MyCharacter[]>([]);
+  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState(false);
+  const [partnerStatus, setPartnerStatus] = useState<'online' | 'away' | 'offline'>('offline');
+  const [loadingStatus, setLoadingStatus] = useState(false);
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -108,24 +112,46 @@ export default function CharacterDetailPage() {
         return;
       }
       if (chars.length === 1) {
-        // Only one character — start chat immediately
-        startConversation(chars[0].id);
+        // Only one character — go directly to mode selection
+        openModeModal(chars[0].id);
         return;
       }
-      // Multiple characters — show picker
+      // Multiple characters — show picker first
       setMyCharacters(chars);
       setShowChatModal(true);
     }
   };
 
-  const startConversation = async (myCharacterId: string) => {
-    setLoadingChat(true);
+  // After character selection, fetch partner's presence and show chat mode modal
+  const openModeModal = async (charId: string) => {
+    setSelectedCharId(charId);
     setShowChatModal(false);
+    setLoadingStatus(true);
+    setShowModeModal(true);
+
+    // Fetch partner user's online status
+    try {
+      const res = await api.get<{ status: string }>(`/api/users/${character!.creator_id}/presence`);
+      if (res.success && res.data) {
+        setPartnerStatus((res.data as any).status || 'offline');
+      }
+    } catch {
+      setPartnerStatus('offline');
+    }
+    setLoadingStatus(false);
+  };
+
+  // Start a conversation with the chosen mode
+  const startConversationWithMode = async (mode: 'ai' | 'live' | 'ai_fallback') => {
+    setLoadingChat(true);
+    setShowModeModal(false);
+
     const res = await api.post<{ id: string }>('/api/conversations', {
-      character_id: myCharacterId,
+      character_id: selectedCharId,
       partner_character_id: character!.id,
       context: character!.world_id ? 'within_world' : 'vacuum',
       world_id: character!.world_id,
+      chat_mode: mode,
     });
 
     if (res.success && res.data) {
@@ -133,6 +159,23 @@ export default function CharacterDetailPage() {
     } else {
       setLoadingChat(false);
       alert(res.message || 'Failed to start conversation');
+    }
+  };
+
+  // Status indicator helpers
+  const statusDot = (status: string) => {
+    switch (status) {
+      case 'online': return 'bg-green-400';
+      case 'away': return 'bg-amber-400';
+      default: return 'bg-slate-500';
+    }
+  };
+
+  const statusLabel = (status: string) => {
+    switch (status) {
+      case 'online': return 'Online now';
+      case 'away': return 'Away';
+      default: return 'Offline';
     }
   };
 
@@ -394,7 +437,7 @@ export default function CharacterDetailPage() {
               {myCharacters.map((char) => (
                 <button
                   key={char.id}
-                  onClick={() => startConversation(char.id)}
+                  onClick={() => openModeModal(char.id)}
                   className="w-full flex items-center gap-3 p-3 bg-slate-700/50 border border-slate-600 rounded-lg hover:border-red-500/50 hover:bg-slate-700 transition-colors text-left"
                 >
                   {char.avatar_url ? (
@@ -411,6 +454,103 @@ export default function CharacterDetailPage() {
 
             <button
               onClick={() => setShowChatModal(false)}
+              className="w-full mt-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Mode Selection Modal */}
+      {showModeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-1">How would you like to chat?</h3>
+            <p className="text-sm text-slate-400 mb-5">
+              Choose how to interact with <span className="text-red-400">{character.name}</span>
+            </p>
+
+            <div className="space-y-3">
+              {/* Option 1: Chat with AI */}
+              <button
+                onClick={() => startConversationWithMode('ai')}
+                disabled={!character.is_ai_enabled || loadingChat}
+                className={`w-full p-4 rounded-xl border text-left transition-all ${
+                  character.is_ai_enabled
+                    ? 'bg-purple-900/20 border-purple-700/50 hover:border-purple-500 hover:bg-purple-900/30 cursor-pointer'
+                    : 'bg-slate-800/50 border-slate-700/50 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-600 flex items-center justify-center text-lg shrink-0">
+                    🤖
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-white">Chat with AI</div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {character.is_ai_enabled
+                        ? `${character.name}'s AI will respond. The owner won't be notified.`
+                        : `${character.name} doesn't have AI enabled.`
+                      }
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Chat with User (live) */}
+              <button
+                onClick={() => {
+                  if (partnerStatus === 'online') {
+                    startConversationWithMode('live');
+                  } else if (character.is_ai_enabled) {
+                    startConversationWithMode('ai_fallback');
+                  } else {
+                    startConversationWithMode('live');
+                  }
+                }}
+                disabled={loadingChat || loadingStatus}
+                className="w-full p-4 rounded-xl border bg-green-900/20 border-green-700/50 hover:border-green-500 hover:bg-green-900/30 transition-all text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center text-lg shrink-0">
+                    💬
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-white">Chat with {character.creator_name}</span>
+                      {loadingStatus ? (
+                        <span className="text-xs text-slate-500">checking...</span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <span className={`w-2 h-2 rounded-full ${statusDot(partnerStatus)}`} />
+                          <span className={`text-xs ${
+                            partnerStatus === 'online' ? 'text-green-400' :
+                            partnerStatus === 'away' ? 'text-amber-400' : 'text-slate-500'
+                          }`}>
+                            {statusLabel(partnerStatus)}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {loadingStatus ? (
+                        'Checking availability...'
+                      ) : partnerStatus === 'online' ? (
+                        'Live chat will start immediately. They\'ll be notified.'
+                      ) : character.is_ai_enabled ? (
+                        `AI will respond as ${character.name} until ${character.creator_name} takes over.`
+                      ) : (
+                        `${character.creator_name} will be notified of your chat request.`
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <button
+              onClick={() => { setShowModeModal(false); setLoadingChat(false); }}
               className="w-full mt-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
             >
               Cancel

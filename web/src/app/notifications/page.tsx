@@ -19,6 +19,7 @@ const typeIcons: Record<string, string> = {
   friend_request: '👤',
   friend_accepted: '🤝',
   chat_message: '💬',
+  chat_request: '🔔',
   quest_invite: '⚔️',
   ai_transcript: '🤖',
   kayfabe_warning: '⚠️',
@@ -68,6 +69,7 @@ export default function NotificationsPage() {
         }
         break;
       case 'chat_message':
+      case 'chat_request':
         if (n.data?.conversationId) {
           router.push(`/chats/${n.data.conversationId}`);
         }
@@ -86,7 +88,7 @@ export default function NotificationsPage() {
   // Check if a notification type has a navigation target
   const isActionable = (n: Notification) => {
     if ((n.type === 'friend_request' || n.type === 'friend_accepted') && n.data?.fromUserId) return true;
-    if (n.type === 'chat_message' && n.data?.conversationId) return true;
+    if ((n.type === 'chat_message' || n.type === 'chat_request') && n.data?.conversationId) return true;
     return false;
   };
 
