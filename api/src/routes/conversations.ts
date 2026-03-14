@@ -197,15 +197,22 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       return;
     }
 
-    // Check if a conversation already exists between these two characters
+    // Determine chat mode and AI control settings
+    const mode = chat_mode || 'live'; // 'ai' | 'live' | 'ai_fallback'
+
+    // Check if an ACTIVE conversation already exists between these characters with the same mode group
+    // AI chats and live/ai_fallback chats are separate — you can have both simultaneously
+    const modeGroup = mode === 'ai' ? ['ai'] : ['live', 'ai_fallback'];
     const existing = await query(
       `SELECT cp1.conversation_id
        FROM conversation_participants cp1
        JOIN conversation_participants cp2 ON cp1.conversation_id = cp2.conversation_id
        JOIN conversations conv ON cp1.conversation_id = conv.id
        WHERE cp1.character_id = $1 AND cp2.character_id = $2
-       AND (conv.is_test IS NULL OR conv.is_test = false)`,
-      [character_id, partner_character_id]
+       AND (conv.is_test IS NULL OR conv.is_test = false)
+       AND conv.is_active = true
+       AND conv.chat_mode = ANY($3)`,
+      [character_id, partner_character_id, modeGroup]
     );
 
     if (existing.rows.length > 0) {
@@ -217,9 +224,6 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       });
       return;
     }
-
-    // Determine chat mode and AI control settings
-    const mode = chat_mode || 'live'; // 'ai' | 'live' | 'ai_fallback'
     const isAIControlled = mode === 'ai' || mode === 'ai_fallback';
 
     // Validate: AI modes require is_ai_enabled on the partner character
@@ -774,6 +778,66 @@ conversationRouter.post('/:id/takeover', authenticate, async (req: AuthRequest, 
     res.json({ success: true, data: { chat_mode: 'live' } });
   } catch (error: any) {
     console.error('Takeover error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/end
+ * End a conversation. Sets is_active to false.
+ * Either participant can end the conversation.
+ * The conversation remains visible in chat history but is marked as ended.
+ */
+conversationRouter.post('/:id/end', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+
+    // Verify user is a participant
+    const participant = await query(
+      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+
+    if (participant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You are not in this conversation' });
+      return;
+    }
+
+    // Verify conversation exists and isn't a test chat
+    const conv = await query(
+      'SELECT id, is_active, is_test FROM conversations WHERE id = $1',
+      [conversationId]
+    );
+
+    if (conv.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+
+    if (!conv.rows[0].is_active) {
+      res.status(400).json({ success: false, message: 'This conversation has already ended' });
+      return;
+    }
+
+    // End the conversation
+    await query(
+      'UPDATE conversations SET is_active = false, updated_at = NOW() WHERE id = $1',
+      [conversationId]
+    );
+
+    // Emit socket event so the other user sees the conversation end in real-time
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('conversation_ended', {
+        conversationId,
+        endedBy: userId,
+      });
+    }
+
+    res.json({ success: true, message: 'Conversation ended' });
+  } catch (error: any) {
+    console.error('End conversation error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

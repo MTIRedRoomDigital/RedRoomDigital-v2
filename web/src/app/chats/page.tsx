@@ -94,11 +94,17 @@ export default function ChatsPage() {
     const isAI = conv.chat_mode === 'ai';
     const isFallback = conv.chat_mode === 'ai_fallback';
 
+    const isEnded = !conv.is_active;
+
     return (
       <Link
         key={conv.id}
         href={`/chats/${conv.id}`}
-        className="group flex items-center gap-4 p-4 bg-slate-800 border border-slate-700 rounded-xl hover:border-red-500/50 transition-all"
+        className={`group flex items-center gap-4 p-4 bg-slate-800 border rounded-xl transition-all ${
+          isEnded
+            ? 'border-slate-700/50 opacity-60 hover:opacity-80'
+            : 'border-slate-700 hover:border-red-500/50'
+        }`}
       >
         {/* Partner Avatar */}
         <div className="relative shrink-0">

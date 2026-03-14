@@ -53,6 +53,8 @@ export default function ChatRoomPage() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [chatLimitHit, setChatLimitHit] = useState(false);
   const [takingOver, setTakingOver] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -158,12 +160,20 @@ export default function ChatRoomPage() {
       }
     });
 
+    // Listen for conversation ended by the other user
+    socket.on('conversation_ended', (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        setConversation((prev) => prev ? { ...prev, is_active: false } : null);
+      }
+    });
+
     return () => {
       socket.emit('leave_conversation', id);
       socket.off('new_message');
       socket.off('user_typing');
       socket.off('user_stop_typing');
       socket.off('chat_mode_changed');
+      socket.off('conversation_ended');
     };
   }, [user, id, conversation]);
 
@@ -270,6 +280,22 @@ export default function ChatRoomPage() {
     }
 
     setTakingOver(false);
+  };
+
+  // End the conversation
+  const handleEndChat = async () => {
+    if (ending) return;
+    setEnding(true);
+
+    const res = await api.post(`/api/conversations/${id}/end`, {});
+    if (res.success) {
+      setConversation((prev) => prev ? { ...prev, is_active: false } : null);
+      setShowEndConfirm(false);
+    } else {
+      alert((res as any).message || 'Failed to end conversation');
+    }
+
+    setEnding(false);
   };
 
   // Handle typing indicator
@@ -380,6 +406,16 @@ export default function ChatRoomPage() {
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-slate-600'}`} />
             </p>
           </div>
+
+          {/* End Chat button */}
+          {conversation.is_active && (
+            <button
+              onClick={() => setShowEndConfirm(true)}
+              className="text-xs px-3 py-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 border border-slate-700 hover:border-red-800/50 rounded-lg transition-colors shrink-0"
+            >
+              End Chat
+            </button>
+          )}
         </div>
       </div>
 
@@ -498,8 +534,8 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {/* AI Response Bar (show for AI and AI Fallback modes, not for the user who can take over) */}
-      {messages.length > 0 && showAIButton && (
+      {/* AI Response Bar (show for AI and AI Fallback modes, only when chat is active) */}
+      {conversation.is_active && messages.length > 0 && showAIButton && (
         <div className="px-4 py-2 bg-slate-800/50 border-t border-slate-700/50 shrink-0">
           <div className="max-w-3xl mx-auto flex items-center justify-center">
             <button
@@ -541,33 +577,71 @@ export default function ChatRoomPage() {
         </div>
       )}
 
-      {/* Message Input */}
-      <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">
-        <div className="max-w-3xl mx-auto flex gap-3 items-end">
-          <div className="flex-1">
-            <textarea
-              ref={inputRef}
-              value={newMessage}
-              onChange={(e) => {
-                setNewMessage(e.target.value);
-                handleTyping();
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={`Write as ${myParticipant?.character_name || 'your character'}...`}
-              rows={1}
-              className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none max-h-32"
-              style={{ minHeight: '44px' }}
-            />
+      {/* Message Input or Ended Banner */}
+      {conversation.is_active ? (
+        <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">
+          <div className="max-w-3xl mx-auto flex gap-3 items-end">
+            <div className="flex-1">
+              <textarea
+                ref={inputRef}
+                value={newMessage}
+                onChange={(e) => {
+                  setNewMessage(e.target.value);
+                  handleTyping();
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={`Write as ${myParticipant?.character_name || 'your character'}...`}
+                rows={1}
+                className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none max-h-32"
+                style={{ minHeight: '44px' }}
+              />
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={!newMessage.trim() || sending}
+              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors shrink-0"
+            >
+              Send
+            </button>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!newMessage.trim() || sending}
-            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors shrink-0"
-          >
-            Send
-          </button>
         </div>
-      </div>
+      ) : (
+        <div className="px-4 py-4 bg-slate-800 border-t border-slate-700 shrink-0">
+          <div className="max-w-3xl mx-auto text-center">
+            <p className="text-slate-500 text-sm">This conversation has ended.</p>
+            <Link href="/chats" className="text-xs text-red-400 hover:text-red-300 transition-colors mt-1 inline-block">
+              &larr; Back to Chats
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* End Chat Confirmation Modal */}
+      {showEndConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-2">End Conversation?</h3>
+            <p className="text-sm text-slate-400 mb-5">
+              This will end the conversation. You can still view the chat history, but no new messages can be sent.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEndConfirm(false)}
+                className="flex-1 py-2 text-sm text-slate-400 hover:text-white border border-slate-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEndChat}
+                disabled={ending}
+                className="flex-1 py-2 text-sm bg-red-600 hover:bg-red-700 disabled:bg-slate-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                {ending ? 'Ending...' : 'End Chat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
