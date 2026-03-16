@@ -66,6 +66,9 @@ export default function WorldDetailPage() {
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'characters' | 'members' | 'campaigns'>('overview');
+  const [showCharPicker, setShowCharPicker] = useState(false);
+  const [myCharacters, setMyCharacters] = useState<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>([]);
+  const [requestingChar, setRequestingChar] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -107,6 +110,35 @@ export default function WorldDetailPage() {
       }
     }
     setJoining(false);
+  };
+
+  const openCharPicker = async () => {
+    if (!user || !world) return;
+    const res = await api.get<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>('/api/users/characters');
+    if (res.success && res.data) {
+      const chars = res.data as any[];
+      // Filter out characters already in this world
+      const available = chars.filter((c: any) => c.world_id !== world.id);
+      if (available.length === 0) {
+        alert('All your characters are already in this world!');
+        return;
+      }
+      setMyCharacters(available);
+      setShowCharPicker(true);
+    }
+  };
+
+  const requestCharacterJoin = async (characterId: string) => {
+    if (!world) return;
+    setRequestingChar(characterId);
+    const res = await api.post(`/api/worlds/${world.id}/character-request`, { character_id: characterId });
+    if (res.success) {
+      alert((res as any).message || 'Request sent!');
+      setShowCharPicker(false);
+    } else {
+      alert((res as any).message || 'Failed to send request');
+    }
+    setRequestingChar(null);
   };
 
   if (loading) {
@@ -203,21 +235,37 @@ export default function WorldDetailPage() {
               Edit World
             </button>
           ) : isMember ? (
-            <button
-              onClick={handleLeave}
-              disabled={joining}
-              className="px-4 py-2 text-sm border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors disabled:opacity-50"
-            >
-              {joining ? 'Leaving...' : 'Leave World'}
-            </button>
+            <>
+              <button
+                onClick={openCharPicker}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+              >
+                Add Character
+              </button>
+              <button
+                onClick={handleLeave}
+                disabled={joining}
+                className="px-4 py-2 text-sm border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {joining ? 'Leaving...' : 'Leave World'}
+              </button>
+            </>
           ) : user ? (
-            <button
-              onClick={handleJoin}
-              disabled={joining}
-              className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-50"
-            >
-              {joining ? 'Joining...' : 'Join World'}
-            </button>
+            <>
+              <button
+                onClick={handleJoin}
+                disabled={joining}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {joining ? 'Joining...' : 'Join World'}
+              </button>
+              <button
+                onClick={openCharPicker}
+                className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
+              >
+                Add Character
+              </button>
+            </>
           ) : (
             <Link
               href="/login"
@@ -469,6 +517,54 @@ export default function WorldDetailPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Character Picker Modal — Request to add a character to this world */}
+      {showCharPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-1">Add Character to World</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              {isCreator
+                ? `Choose a character to add to ${world.name}`
+                : `Request to add a character to ${world.name}. The owner will be notified.`
+              }
+            </p>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {myCharacters.map((char) => (
+                <button
+                  key={char.id}
+                  onClick={() => requestCharacterJoin(char.id)}
+                  disabled={requestingChar === char.id}
+                  className="w-full flex items-center gap-3 p-3 bg-slate-700/50 border border-slate-600 rounded-lg hover:border-amber-500/50 hover:bg-slate-700 transition-colors text-left disabled:opacity-50"
+                >
+                  {char.avatar_url ? (
+                    <img src={char.avatar_url} alt={char.name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-lg shrink-0">
+                      🎭
+                    </div>
+                  )}
+                  <span className="font-medium text-white flex-1">{char.name}</span>
+                  {char.world_id && (
+                    <span className="text-xs text-slate-500">In another world</span>
+                  )}
+                  {requestingChar === char.id && (
+                    <span className="inline-block w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowCharPicker(false)}
+              className="w-full mt-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
+import { createNotification } from '../services/notifications';
 
 export const worldRouter = Router();
 
@@ -394,6 +395,192 @@ worldRouter.get('/:id/members', async (req: Request, res: Response) => {
     res.json({ success: true, data: result.rows });
   } catch (error: any) {
     console.error('Get members error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/worlds/:id/character-request
+ * Request to add a character to a world. Sends a notification to the world owner.
+ * Body: { character_id: string }
+ */
+worldRouter.post('/:id/character-request', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id as string;
+    const { character_id } = req.body;
+
+    if (!character_id) {
+      res.status(400).json({ success: false, message: 'character_id is required' });
+      return;
+    }
+
+    // Verify user owns the character
+    const charResult = await query(
+      'SELECT id, name, world_id FROM characters WHERE id = $1 AND creator_id = $2',
+      [character_id, userId]
+    );
+
+    if (charResult.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You do not own this character' });
+      return;
+    }
+
+    const character = charResult.rows[0];
+
+    if (character.world_id === worldId) {
+      res.status(400).json({ success: false, message: 'This character is already in this world' });
+      return;
+    }
+
+    // Get world info
+    const worldResult = await query(
+      'SELECT id, name, creator_id FROM worlds WHERE id = $1',
+      [worldId]
+    );
+
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const world = worldResult.rows[0];
+
+    // Don't send request to yourself
+    if (world.creator_id === userId) {
+      // Owner can add their own characters directly
+      await query('UPDATE characters SET world_id = $1 WHERE id = $2', [worldId, character_id]);
+      res.json({ success: true, message: 'Character added to your world' });
+      return;
+    }
+
+    // Check for existing pending request
+    const existingNotif = await query(
+      `SELECT id FROM notifications
+       WHERE user_id = $1 AND type = 'world_character_request' AND is_read = false
+       AND data->>'characterId' = $2 AND data->>'worldId' = $3
+       LIMIT 1`,
+      [world.creator_id, character_id, worldId]
+    );
+
+    if (existingNotif.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'A request for this character is already pending' });
+      return;
+    }
+
+    // Send notification to world owner
+    await createNotification({
+      userId: world.creator_id,
+      type: 'world_character_request',
+      title: 'Character Join Request',
+      body: `${req.user!.username} wants to add "${character.name}" to ${world.name}`,
+      data: {
+        characterId: character_id,
+        characterName: character.name,
+        worldId: worldId,
+        worldName: world.name,
+        fromUserId: userId,
+        fromUsername: req.user!.username,
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: 'Request sent to the world owner' });
+  } catch (error: any) {
+    console.error('Character request error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/worlds/:id/character-request/respond
+ * World owner accepts or rejects a character join request.
+ * Body: { character_id: string, notification_id: string, action: 'accept' | 'reject' }
+ */
+worldRouter.post('/:id/character-request/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id as string;
+    const { character_id, notification_id, action } = req.body;
+
+    if (!character_id || !notification_id || !['accept', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, message: 'character_id, notification_id, and action (accept/reject) are required' });
+      return;
+    }
+
+    // Verify user is the world owner or WorldMaster
+    const worldResult = await query('SELECT creator_id, name FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const world = worldResult.rows[0];
+    const isCreator = world.creator_id === userId;
+
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, userId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only the world owner or WorldMasters can respond to requests' });
+        return;
+      }
+    }
+
+    // Mark the notification as read
+    await query('UPDATE notifications SET is_read = true WHERE id = $1', [notification_id]);
+
+    // Get character info
+    const charResult = await query('SELECT id, name, creator_id FROM characters WHERE id = $1', [character_id]);
+    if (charResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+
+    const character = charResult.rows[0];
+
+    if (action === 'accept') {
+      // Add character to world
+      await query('UPDATE characters SET world_id = $1 WHERE id = $2', [worldId, character_id]);
+
+      // Also add user as world member if not already
+      const existingMember = await query(
+        'SELECT id FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, character.creator_id]
+      );
+      if (existingMember.rows.length === 0) {
+        await query('INSERT INTO world_members (world_id, user_id) VALUES ($1, $2)', [worldId, character.creator_id]);
+        await query('UPDATE worlds SET member_count = member_count + 1 WHERE id = $1', [worldId]);
+      }
+
+      // Notify the character owner
+      await createNotification({
+        userId: character.creator_id,
+        type: 'world_character_accepted',
+        title: 'Character Accepted!',
+        body: `"${character.name}" has been accepted into ${world.name}!`,
+        data: { characterId: character_id, worldId: worldId, worldName: world.name },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: `${character.name} has been added to ${world.name}` });
+    } else {
+      // Notify the character owner of rejection
+      await createNotification({
+        userId: character.creator_id,
+        type: 'world_character_rejected',
+        title: 'Character Request Declined',
+        body: `"${character.name}" was not accepted into ${world.name}`,
+        data: { characterId: character_id, worldId: worldId, worldName: world.name },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'Request rejected' });
+    }
+  } catch (error: any) {
+    console.error('Character request respond error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

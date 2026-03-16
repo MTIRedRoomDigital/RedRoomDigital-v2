@@ -484,6 +484,82 @@ conversationRouter.post('/:id/messages', authenticate, async (req: AuthRequest, 
       console.error('Chat notification error:', notifErr.message);
     }
 
+    // Auto-trigger AI response for AI and AI Fallback chats
+    // This runs asynchronously — the user's message is returned immediately
+    try {
+      const convMode = await query('SELECT chat_mode, is_active FROM conversations WHERE id = $1', [req.params.id]);
+      const mode = convMode.rows[0]?.chat_mode;
+      const isActive = convMode.rows[0]?.is_active;
+
+      if (isActive && (mode === 'ai' || mode === 'ai_fallback')) {
+        // Fire and forget — generate AI response in the background
+        (async () => {
+          try {
+            // Find the AI character (the partner, not the sender)
+            const aiParticipant = await query(
+              `SELECT cp.character_id, cp.user_id, c.name, c.is_ai_enabled
+               FROM conversation_participants cp
+               JOIN characters c ON cp.character_id = c.id
+               WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+              [req.params.id, req.user!.id]
+            );
+
+            if (aiParticipant.rows.length === 0 || !aiParticipant.rows[0].is_ai_enabled) return;
+            if (!process.env.OPENROUTER_API_KEY) return;
+
+            const aiChar = aiParticipant.rows[0];
+
+            // Get recent messages for context
+            const recentMessages = await query(
+              `SELECT m.content, m.sender_character_id, m.sender_type, c.name AS sender_name
+               FROM messages m
+               JOIN characters c ON m.sender_character_id = c.id
+               WHERE m.conversation_id = $1
+               ORDER BY m.created_at ASC`,
+              [req.params.id]
+            );
+
+            // Generate AI response
+            const aiResponse = await generateAIResponse(
+              aiChar.character_id,
+              req.params.id as string,
+              recentMessages.rows,
+              false
+            );
+
+            // Save the AI message
+            const aiResult = await query(
+              `INSERT INTO messages (conversation_id, sender_character_id, sender_user_id, sender_type, content, ai_model, ai_prompt_tokens, ai_completion_tokens)
+               VALUES ($1, $2, $3, 'ai', $4, $5, $6, $7)
+               RETURNING *`,
+              [req.params.id, aiChar.character_id, aiChar.user_id, aiResponse.content, aiResponse.model, aiResponse.promptTokens, aiResponse.completionTokens]
+            );
+
+            // Get full message with character info
+            const aiFullMessage = await query(
+              `SELECT m.*, c.name AS sender_name, c.avatar_url AS sender_avatar
+               FROM messages m
+               JOIN characters c ON m.sender_character_id = c.id
+               WHERE m.id = $1`,
+              [aiResult.rows[0].id]
+            );
+
+            // Update conversation timestamp
+            await query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [req.params.id]);
+
+            // Emit via Socket.IO
+            if (io) {
+              io.to(`conversation:${req.params.id}`).emit('new_message', aiFullMessage.rows[0]);
+            }
+          } catch (aiErr: any) {
+            console.error('Auto AI response error:', aiErr.message);
+          }
+        })();
+      }
+    } catch (autoAiErr: any) {
+      console.error('Auto AI check error:', autoAiErr.message);
+    }
+
     res.status(201).json({ success: true, data: fullMessage.rows[0] });
   } catch (error: any) {
     console.error('Send message error:', error.message);

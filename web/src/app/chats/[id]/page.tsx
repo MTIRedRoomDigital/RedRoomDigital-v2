@@ -48,7 +48,7 @@ export default function ChatRoomPage() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [generatingAI, setGeneratingAI] = useState(false);
+  const [aiThinking, setAiThinking] = useState(false);
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [chatLimitHit, setChatLimitHit] = useState(false);
@@ -67,8 +67,8 @@ export default function ChatRoomPage() {
   // Can this user take over from AI? (User B sees this when their character is AI-controlled in ai_fallback)
   const canTakeOver = conversation?.chat_mode === 'ai_fallback' && myParticipant?.is_ai_controlled;
 
-  // Should AI response button show? (for AI and AI Fallback modes, but NOT for the user who can take over)
-  const showAIButton = (conversation?.chat_mode === 'ai' || conversation?.chat_mode === 'ai_fallback') && !canTakeOver;
+  // Is this an AI-powered chat? (used to show thinking indicator)
+  const isAIChat = (conversation?.chat_mode === 'ai' || conversation?.chat_mode === 'ai_fallback') && !canTakeOver;
 
   // Scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -123,9 +123,14 @@ export default function ChatRoomPage() {
       socket.emit('join_conversation', id);
     }
 
-    // Listen for new messages (only from OTHER users — we handle our own via optimistic update)
+    // Listen for new messages (from other users or AI auto-responses)
     socket.on('new_message', (message: Message) => {
-      if (message.sender_user_id === user.id) return; // Skip our own messages
+      // Skip our own user messages (we handle those via optimistic update)
+      if (message.sender_type === 'user' && message.sender_user_id === user.id) return;
+      // AI response arrived — clear thinking indicator
+      if (message.sender_type === 'ai') {
+        setAiThinking(false);
+      }
       setMessages((prev) => {
         if (prev.some((m) => m.id === message.id)) return prev;
         return [...prev, message];
@@ -223,6 +228,10 @@ export default function ChatRoomPage() {
       setMessages((prev) =>
         prev.map((m) => (m.id === optimisticMsg.id ? (res.data as Message) : m))
       );
+      // Show AI thinking indicator for AI chats
+      if (isAIChat) {
+        setAiThinking(true);
+      }
     } else {
       // Check if rate limited (daily chat limit hit)
       const errData = res as any;
@@ -234,26 +243,6 @@ export default function ChatRoomPage() {
     }
 
     inputRef.current?.focus();
-  };
-
-  // Generate AI response for the partner character
-  const handleAIResponse = async () => {
-    if (generatingAI) return;
-    setGeneratingAI(true);
-
-    const res = await api.post<Message>(`/api/conversations/${id}/ai-response`, {});
-
-    if (res.success && res.data) {
-      setMessages((prev) => {
-        const msg = res.data as Message;
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, msg];
-      });
-    } else {
-      alert((res as any).message || 'Failed to generate AI response');
-    }
-
-    setGeneratingAI(false);
   };
 
   // Take over from AI (User B clicks this to go live)
@@ -534,27 +523,12 @@ export default function ChatRoomPage() {
         </div>
       </div>
 
-      {/* AI Response Bar (show for AI and AI Fallback modes, only when chat is active) */}
-      {conversation.is_active && messages.length > 0 && showAIButton && (
-        <div className="px-4 py-2 bg-slate-800/50 border-t border-slate-700/50 shrink-0">
-          <div className="max-w-3xl mx-auto flex items-center justify-center">
-            <button
-              onClick={handleAIResponse}
-              disabled={generatingAI}
-              className="flex items-center gap-2 px-4 py-1.5 text-sm bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-lg transition-all"
-            >
-              {generatingAI ? (
-                <>
-                  <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {partnerParticipant?.character_name} is thinking...
-                </>
-              ) : (
-                <>
-                  <span>🤖</span>
-                  Generate {partnerParticipant?.character_name}&apos;s Response
-                </>
-              )}
-            </button>
+      {/* AI Thinking Indicator */}
+      {aiThinking && conversation.is_active && (
+        <div className="px-4 py-2 bg-purple-900/10 border-t border-purple-800/30 shrink-0">
+          <div className="max-w-3xl mx-auto flex items-center gap-2 justify-center text-sm text-purple-400">
+            <span className="inline-block w-4 h-4 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+            {partnerParticipant?.character_name} is thinking...
           </div>
         </div>
       )}

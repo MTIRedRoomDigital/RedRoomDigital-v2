@@ -24,6 +24,9 @@ const typeIcons: Record<string, string> = {
   ai_transcript: '🤖',
   kayfabe_warning: '⚠️',
   world_invite: '🌍',
+  world_character_request: '🎭',
+  world_character_accepted: '✅',
+  world_character_rejected: '❌',
   system: '📢',
 };
 
@@ -32,6 +35,7 @@ export default function NotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [responding, setResponding] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -57,6 +61,9 @@ export default function NotificationsPage() {
   };
 
   const handleNotificationClick = async (n: Notification) => {
+    // Don't navigate for actionable request notifications — they have inline buttons
+    if (n.type === 'world_character_request' && !n.is_read) return;
+
     // Mark as read first
     if (!n.is_read) await markRead(n.id);
 
@@ -74,21 +81,41 @@ export default function NotificationsPage() {
           router.push(`/chats/${n.data.conversationId}`);
         }
         break;
-      case 'quest_invite':
-        // Future: navigate to quest page
+      case 'world_character_accepted':
+      case 'world_character_rejected':
+        if (n.data?.worldId) {
+          router.push(`/worlds/${n.data.worldId}`);
+        }
         break;
-      case 'world_invite':
-        // Future: navigate to world page
+      case 'world_character_request':
+        if (n.data?.worldId) {
+          router.push(`/worlds/${n.data.worldId}`);
+        }
         break;
       default:
         break;
     }
   };
 
+  const handleCharacterRequest = async (n: Notification, action: 'accept' | 'reject') => {
+    setResponding(n.id);
+    const res = await api.post(`/api/worlds/${n.data.worldId}/character-request/respond`, {
+      character_id: n.data.characterId,
+      notification_id: n.id,
+      action,
+    });
+    if (res.success) {
+      setNotifications((prev) => prev.map((notif) => (notif.id === n.id ? { ...notif, is_read: true } : notif)));
+    }
+    setResponding(null);
+  };
+
   // Check if a notification type has a navigation target
   const isActionable = (n: Notification) => {
     if ((n.type === 'friend_request' || n.type === 'friend_accepted') && n.data?.fromUserId) return true;
     if ((n.type === 'chat_message' || n.type === 'chat_request') && n.data?.conversationId) return true;
+    if ((n.type === 'world_character_accepted' || n.type === 'world_character_rejected') && n.data?.worldId) return true;
+    if (n.type === 'world_character_request' && n.data?.worldId) return true;
     return false;
   };
 
@@ -161,6 +188,25 @@ export default function NotificationsPage() {
                   </div>
                   {n.body && (
                     <p className="text-xs text-slate-500 mt-0.5">{n.body}</p>
+                  )}
+                  {/* Accept/Reject buttons for world character requests */}
+                  {n.type === 'world_character_request' && !n.is_read && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCharacterRequest(n, 'accept'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                      >
+                        {responding === n.id ? '...' : 'Accept'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCharacterRequest(n, 'reject'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
