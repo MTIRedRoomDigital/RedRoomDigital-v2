@@ -161,7 +161,7 @@ userRouter.get('/search', async (req: Request, res: Response) => {
  */
 userRouter.get('/:id/presence', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const status = getUserStatus(req.params.id);
+    const status = getUserStatus(req.params.id as string);
     res.json({ success: true, data: { userId: req.params.id, status } });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Server error' });

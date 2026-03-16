@@ -104,7 +104,7 @@ router.post('/request/:userId', authenticate, async (req: AuthRequest, res: Resp
 
     // Create notification for the target user (real-time via Socket.IO)
     await createNotification({
-      userId: targetId,
+      userId: targetId as string,
       type: 'friend_request',
       title: 'New Friend Request',
       body: `${req.user!.username} sent you a friend request`,
