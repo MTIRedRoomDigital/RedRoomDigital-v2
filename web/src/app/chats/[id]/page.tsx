@@ -57,8 +57,8 @@ export default function ChatRoomPage() {
   const [takingOver, setTakingOver] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [ending, setEnding] = useState(false);
-  const [addingCanon, setAddingCanon] = useState(false);
-  const [canonResult, setCanonResult] = useState<{ eventsAdded: number; relationshipsUpdated: number; events: { event: string; impact: string }[] } | null>(null);
+  const [requestingCanon, setRequestingCanon] = useState(false);
+  const [canonRequestSent, setCanonRequestSent] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -291,22 +291,22 @@ export default function ChatRoomPage() {
     setEnding(false);
   };
 
-  // Add conversation to character canon
-  const handleAddToCanon = async () => {
-    if (!myParticipant || addingCanon) return;
-    setAddingCanon(true);
+  // Request to add conversation to both characters' canon
+  const handleCanonRequest = async () => {
+    if (!myParticipant || requestingCanon) return;
+    setRequestingCanon(true);
 
-    const res = await api.post<{ eventsAdded: number; relationshipsUpdated: number; events: { event: string; impact: string }[] }>(`/api/conversations/${id}/add-to-canon`, {
+    const res = await api.post(`/api/conversations/${id}/canon-request`, {
       character_id: myParticipant.character_id,
     });
 
-    if (res.success && res.data) {
-      setCanonResult(res.data as any);
+    if (res.success) {
+      setCanonRequestSent(true);
     } else {
-      alert((res as any).message || 'Failed to add to canon');
+      alert((res as any).message || 'Failed to send canon request');
     }
 
-    setAddingCanon(false);
+    setRequestingCanon(false);
   };
 
   // Handle typing indicator
@@ -423,23 +423,7 @@ export default function ChatRoomPage() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Add to Canon button — only for user's own character, when messages exist */}
-            {messages.length >= 2 && !canonResult && (
-              <button
-                onClick={handleAddToCanon}
-                disabled={addingCanon}
-                className="text-xs px-3 py-1.5 text-amber-400 hover:text-amber-300 hover:bg-amber-900/20 border border-slate-700 hover:border-amber-800/50 rounded-lg transition-colors"
-              >
-                {addingCanon ? '📜 Analyzing...' : '📜 Add to Canon'}
-              </button>
-            )}
-            {canonResult && (
-              <span className="text-xs text-green-400 px-2">
-                ✅ {canonResult.eventsAdded} events added
-              </span>
-            )}
-
-            {/* End Chat button */}
+            {/* End Chat button — only when active */}
             {conversation.is_active && (
               <button
                 onClick={() => setShowEndConfirm(true)}
@@ -625,11 +609,32 @@ export default function ChatRoomPage() {
         </div>
       ) : (
         <div className="px-4 py-4 bg-slate-800 border-t border-slate-700 shrink-0">
-          <div className="max-w-3xl mx-auto text-center">
+          <div className="max-w-3xl mx-auto text-center space-y-2">
             <p className="text-slate-500 text-sm">This conversation has ended.</p>
-            <Link href="/chats" className="text-xs text-red-400 hover:text-red-300 transition-colors mt-1 inline-block">
-              &larr; Back to Chats
-            </Link>
+
+            {/* Canon request button — only after chat ends, with enough messages */}
+            {messages.length >= 2 && !canonRequestSent && (
+              <button
+                onClick={handleCanonRequest}
+                disabled={requestingCanon}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+              >
+                {requestingCanon
+                  ? '📜 Sending request...'
+                  : `📜 Request ${partnerParticipant?.owner_name || 'other player'} to add to canon`}
+              </button>
+            )}
+            {canonRequestSent && (
+              <p className="text-sm text-green-400">
+                ✅ Canon request sent! Waiting for {partnerParticipant?.owner_name || 'the other player'} to accept.
+              </p>
+            )}
+
+            <div>
+              <Link href="/chats" className="text-xs text-red-400 hover:text-red-300 transition-colors inline-block">
+                &larr; Back to Chats
+              </Link>
+            </div>
           </div>
         </div>
       )}

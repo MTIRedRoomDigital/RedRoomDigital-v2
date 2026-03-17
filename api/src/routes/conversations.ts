@@ -931,14 +931,15 @@ conversationRouter.post('/:id/end', authenticate, async (req: AuthRequest, res: 
 });
 
 /**
- * POST /api/conversations/:id/add-to-canon
- * Analyze the conversation and add key events/relationships to the user's character.
- * Body: { character_id: string } — the user's character in this conversation
+ * POST /api/conversations/:id/canon-request
+ * Request to add a conversation to both characters' canon.
+ * Only available after a chat has ended. Sends a notification to the other user.
+ * Body: { character_id: string } — the requester's character in this conversation
  */
-conversationRouter.post('/:id/add-to-canon', authenticate, async (req: AuthRequest, res: Response) => {
+conversationRouter.post('/:id/canon-request', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
-    const conversationId = req.params.id;
+    const conversationId = req.params.id as string;
     const { character_id } = req.body;
 
     if (!character_id) {
@@ -946,92 +947,231 @@ conversationRouter.post('/:id/add-to-canon', authenticate, async (req: AuthReque
       return;
     }
 
-    // Verify user owns this character
-    const charCheck = await query(
-      'SELECT id, history FROM characters WHERE id = $1 AND creator_id = $2',
-      [character_id, userId]
+    // Verify conversation exists and is ended
+    const convCheck = await query(
+      'SELECT id, is_active, is_test FROM conversations WHERE id = $1',
+      [conversationId]
     );
-    if (charCheck.rows.length === 0) {
-      res.status(403).json({ success: false, message: 'You do not own this character' });
+    if (convCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+    if (convCheck.rows[0].is_active) {
+      res.status(400).json({ success: false, message: 'You can only add to canon after the chat has ended' });
       return;
     }
 
-    // Verify user is a participant in this conversation
-    const participantCheck = await query(
-      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND character_id = $2 AND user_id = $3',
+    // Verify user owns this character and is a participant
+    const myParticipant = await query(
+      `SELECT cp.character_id, c.name AS character_name
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND cp.character_id = $2 AND cp.user_id = $3`,
       [conversationId, character_id, userId]
     );
-    if (participantCheck.rows.length === 0) {
-      res.status(403).json({ success: false, message: 'This character is not in this conversation' });
+    if (myParticipant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'This character is not yours in this conversation' });
       return;
     }
 
-    // Use AI to summarize the conversation into canon events + relationship updates
-    const summary = await summarizeForCanon(character_id, conversationId as string);
-
-    // Apply events to character history
-    const existingHistory = charCheck.rows[0].history || [];
-    const newHistory = [
-      ...existingHistory,
-      ...summary.events.map((e) => ({
-        event: e.event,
-        impact: e.impact,
-        date: new Date().toISOString().split('T')[0], // Today's date
-        source: 'canon_chat',
-        conversationId,
-      })),
-    ];
-
-    await query(
-      'UPDATE characters SET history = $1 WHERE id = $2',
-      [JSON.stringify(newHistory), character_id]
+    // Get the other participant
+    const otherParticipant = await query(
+      `SELECT cp.user_id, cp.character_id, c.name AS character_name, u.username
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       JOIN users u ON cp.user_id = u.id
+       WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+      [conversationId, userId]
     );
 
-    // Apply relationship updates
-    let relationshipsUpdated = 0;
-    for (const rel of summary.relationships) {
-      if (!rel.characterId) continue;
-
-      // Check if relationship exists
-      const existing = await query(
-        'SELECT id, strength FROM character_relationships WHERE character_id = $1 AND related_character_id = $2',
-        [character_id, rel.characterId]
-      );
-
-      if (existing.rows.length > 0) {
-        // Update existing relationship
-        const newStrength = Math.max(0, Math.min(100, existing.rows[0].strength + rel.strengthChange));
-        await query(
-          `UPDATE character_relationships SET
-            relationship_type = $1, description = $2, strength = $3, updated_at = NOW()
-           WHERE character_id = $4 AND related_character_id = $5`,
-          [rel.type, rel.description, newStrength, character_id, rel.characterId]
-        );
-      } else {
-        // Create new relationship
-        const initialStrength = Math.max(0, Math.min(100, 50 + rel.strengthChange));
-        await query(
-          `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description, strength)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (character_id, related_character_id) DO UPDATE SET
-             relationship_type = $3, description = $4, strength = $5, updated_at = NOW()`,
-          [character_id, rel.characterId, rel.type, rel.description, initialStrength]
-        );
-      }
-      relationshipsUpdated++;
+    if (otherParticipant.rows.length === 0) {
+      // Solo/AI-only chat — just apply canon directly to the requester's character
+      await applyCanonToCharacter(character_id, conversationId);
+      res.json({ success: true, message: 'Canon updated for your character', solo: true });
+      return;
     }
 
-    res.json({
-      success: true,
+    const other = otherParticipant.rows[0];
+
+    // Check for existing pending canon request for this conversation
+    const existingNotif = await query(
+      `SELECT id FROM notifications
+       WHERE user_id = $1 AND type = 'canon_request' AND is_read = false
+       AND data->>'conversationId' = $2
+       LIMIT 1`,
+      [other.user_id, conversationId]
+    );
+    if (existingNotif.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'A canon request for this conversation is already pending' });
+      return;
+    }
+
+    // Send notification to the other user
+    await createNotification({
+      userId: other.user_id,
+      type: 'canon_request',
+      title: 'Canon Request',
+      body: `${req.user!.username} wants to add the chat between ${myParticipant.rows[0].character_name} & ${other.character_name} to canon`,
       data: {
-        eventsAdded: summary.events.length,
-        relationshipsUpdated,
-        events: summary.events,
-        relationships: summary.relationships,
+        conversationId,
+        fromUserId: userId,
+        fromUsername: req.user!.username,
+        fromCharacterId: character_id,
+        fromCharacterName: myParticipant.rows[0].character_name,
+        toCharacterId: other.character_id,
+        toCharacterName: other.character_name,
       },
+      io: req.app.get('io'),
     });
+
+    res.json({ success: true, message: `Canon request sent to ${other.username}` });
   } catch (error: any) {
-    console.error('Add to canon error:', error.message);
+    console.error('Canon request error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+/**
+ * POST /api/conversations/:id/canon-request/respond
+ * Accept or reject a canon request. If accepted, both characters get their canon updated.
+ * Body: { notification_id: string, action: 'accept' | 'reject' }
+ */
+conversationRouter.post('/:id/canon-request/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id as string;
+    const { notification_id, action } = req.body;
+
+    if (!notification_id || !['accept', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, message: 'notification_id and action (accept/reject) are required' });
+      return;
+    }
+
+    // Get the notification to extract character info
+    const notifResult = await query(
+      'SELECT id, data FROM notifications WHERE id = $1 AND user_id = $2',
+      [notification_id, userId]
+    );
+    if (notifResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Notification not found' });
+      return;
+    }
+
+    const notifData = notifResult.rows[0].data;
+
+    // Mark notification as read
+    await query('UPDATE notifications SET is_read = true WHERE id = $1', [notification_id]);
+
+    if (action === 'reject') {
+      // Notify the requester
+      await createNotification({
+        userId: notifData.fromUserId,
+        type: 'canon_rejected',
+        title: 'Canon Request Declined',
+        body: `${req.user!.username} declined adding the chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName} to canon`,
+        data: { conversationId },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'Canon request declined' });
+      return;
+    }
+
+    // === ACCEPTED — apply canon to BOTH characters ===
+    const fromCharId = notifData.fromCharacterId as string;
+    const toCharId = notifData.toCharacterId as string;
+
+    // Apply canon to both characters
+    const result1 = await applyCanonToCharacter(fromCharId, conversationId);
+    const result2 = await applyCanonToCharacter(toCharId, conversationId);
+
+    // Notify the requester that it was accepted
+    await createNotification({
+      userId: notifData.fromUserId,
+      type: 'canon_accepted',
+      title: 'Canon Request Accepted!',
+      body: `${req.user!.username} agreed! The chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName} is now canon`,
+      data: {
+        conversationId,
+        eventsAdded: (result1?.eventsAdded || 0) + (result2?.eventsAdded || 0),
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({
+      success: true,
+      message: 'Canon updated for both characters!',
+      data: {
+        character1: result1,
+        character2: result2,
+      },
+    });
+  } catch (error: any) {
+    console.error('Canon respond error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * Helper: Apply canon events + relationship updates to a single character
+ */
+async function applyCanonToCharacter(characterId: string, conversationId: string) {
+  // Get character's current history
+  const charCheck = await query('SELECT id, history FROM characters WHERE id = $1', [characterId]);
+  if (charCheck.rows.length === 0) return null;
+
+  // Check if this conversation was already added to this character's canon
+  const existingHistory = charCheck.rows[0].history || [];
+  const alreadyAdded = existingHistory.some((h: any) => h.conversationId === conversationId && h.source === 'canon_chat');
+  if (alreadyAdded) return { eventsAdded: 0, relationshipsUpdated: 0, alreadyExists: true };
+
+  // Use AI to summarize
+  const summary = await summarizeForCanon(characterId, conversationId);
+
+  // Apply events to character history
+  const newHistory = [
+    ...existingHistory,
+    ...summary.events.map((e) => ({
+      event: e.event,
+      impact: e.impact,
+      date: new Date().toISOString().split('T')[0],
+      source: 'canon_chat',
+      conversationId,
+    })),
+  ];
+
+  await query('UPDATE characters SET history = $1 WHERE id = $2', [JSON.stringify(newHistory), characterId]);
+
+  // Apply relationship updates
+  let relationshipsUpdated = 0;
+  for (const rel of summary.relationships) {
+    if (!rel.characterId) continue;
+
+    const existing = await query(
+      'SELECT id, strength FROM character_relationships WHERE character_id = $1 AND related_character_id = $2',
+      [characterId, rel.characterId]
+    );
+
+    if (existing.rows.length > 0) {
+      const newStrength = Math.max(0, Math.min(100, existing.rows[0].strength + rel.strengthChange));
+      await query(
+        `UPDATE character_relationships SET
+          relationship_type = $1, description = $2, strength = $3, updated_at = NOW()
+         WHERE character_id = $4 AND related_character_id = $5`,
+        [rel.type, rel.description, newStrength, characterId, rel.characterId]
+      );
+    } else {
+      const initialStrength = Math.max(0, Math.min(100, 50 + rel.strengthChange));
+      await query(
+        `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description, strength)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (character_id, related_character_id) DO UPDATE SET
+           relationship_type = $3, description = $4, strength = $5, updated_at = NOW()`,
+        [characterId, rel.characterId, rel.type, rel.description, initialStrength]
+      );
+    }
+    relationshipsUpdated++;
+  }
+
+  return { eventsAdded: summary.events.length, relationshipsUpdated };
+}
