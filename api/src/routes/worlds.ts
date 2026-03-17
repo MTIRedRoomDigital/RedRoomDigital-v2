@@ -105,6 +105,16 @@ worldRouter.get('/:id', async (req: Request, res: Response) => {
       [req.params.id]
     );
 
+    // Get locations in this world
+    const locations = await query(
+      `SELECT wl.*, u.username AS creator_name
+       FROM world_locations wl
+       LEFT JOIN users u ON wl.created_by = u.id
+       WHERE wl.world_id = $1
+       ORDER BY wl.name ASC`,
+      [req.params.id]
+    );
+
     // Get characters in this world
     const characters = await query(
       `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count,
@@ -125,6 +135,7 @@ worldRouter.get('/:id', async (req: Request, res: Response) => {
         character_count: parseInt(charCount.rows[0].count),
         members: members.rows,
         characters: characters.rows,
+        locations: locations.rows,
       },
     });
   } catch (error: any) {
@@ -581,6 +592,172 @@ worldRouter.post('/:id/character-request/respond', authenticate, async (req: Aut
     }
   } catch (error: any) {
     console.error('Character request respond error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ─── WORLD LOCATIONS ──────────────────────────────────────────
+
+/**
+ * GET /api/worlds/:id/locations
+ * Get all locations in a world
+ */
+worldRouter.get('/:id/locations', async (req: Request, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT wl.*, u.username AS creator_name
+       FROM world_locations wl
+       LEFT JOIN users u ON wl.created_by = u.id
+       WHERE wl.world_id = $1
+       ORDER BY wl.name ASC`,
+      [req.params.id]
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    console.error('Get locations error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/worlds/:id/locations
+ * Create a location (WorldMaster or creator only)
+ */
+worldRouter.post('/:id/locations', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id;
+    const { name, description, type } = req.body;
+
+    if (!name) {
+      res.status(400).json({ success: false, message: 'Location name is required' });
+      return;
+    }
+
+    // Verify user is creator or WorldMaster
+    const worldResult = await query('SELECT creator_id FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const isCreator = worldResult.rows[0].creator_id === userId;
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, userId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only WorldMasters can create locations' });
+        return;
+      }
+    }
+
+    const result = await query(
+      `INSERT INTO world_locations (world_id, name, description, type, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [worldId, name, description || null, type || null, userId]
+    );
+
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('Create location error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * PUT /api/worlds/:id/locations/:locationId
+ * Update a location
+ */
+worldRouter.put('/:id/locations/:locationId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id;
+    const { name, description, type } = req.body;
+
+    // Verify user is creator or WorldMaster
+    const worldResult = await query('SELECT creator_id FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const isCreator = worldResult.rows[0].creator_id === userId;
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, userId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only WorldMasters can edit locations' });
+        return;
+      }
+    }
+
+    const result = await query(
+      `UPDATE world_locations SET
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        type = COALESCE($3, type),
+        updated_at = NOW()
+       WHERE id = $4 AND world_id = $5 RETURNING *`,
+      [name, description, type, req.params.locationId, worldId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Location not found' });
+      return;
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error: any) {
+    console.error('Update location error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * DELETE /api/worlds/:id/locations/:locationId
+ * Delete a location
+ */
+worldRouter.delete('/:id/locations/:locationId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id;
+
+    // Verify user is creator or WorldMaster
+    const worldResult = await query('SELECT creator_id FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const isCreator = worldResult.rows[0].creator_id === userId;
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, userId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only WorldMasters can delete locations' });
+        return;
+      }
+    }
+
+    const result = await query(
+      'DELETE FROM world_locations WHERE id = $1 AND world_id = $2 RETURNING id',
+      [req.params.locationId, worldId]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Location not found' });
+      return;
+    }
+
+    res.json({ success: true, message: 'Location deleted' });
+  } catch (error: any) {
+    console.error('Delete location error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

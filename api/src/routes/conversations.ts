@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { generateAIResponse } from '../services/ai';
+import { generateAIResponse, summarizeForCanon } from '../services/ai';
 import { createNotification } from '../services/notifications';
 
 export const conversationRouter = Router();
@@ -112,10 +112,21 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
       [req.params.id]
     );
 
+    // Get location info if set
+    let location = null;
+    if (conv.rows[0].location_id) {
+      const locResult = await query(
+        'SELECT id, name, description, type FROM world_locations WHERE id = $1',
+        [conv.rows[0].location_id]
+      );
+      if (locResult.rows.length > 0) location = locResult.rows[0];
+    }
+
     res.json({
       success: true,
       data: {
         ...conv.rows[0],
+        location,
         participants: participants.rows,
       },
     });
@@ -131,7 +142,7 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
  */
 conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { character_id, partner_character_id, context, world_id, is_test, chat_mode } = req.body;
+    const { character_id, partner_character_id, context, world_id, location_id, is_test, chat_mode } = req.body;
 
     // === TEST CHAT MODE ===
     // Owner tests their own character — no partner character needed
@@ -237,12 +248,13 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
 
     // Create conversation with chat_mode
     const conv = await query(
-      `INSERT INTO conversations (context, world_id, title, chat_mode)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO conversations (context, world_id, location_id, title, chat_mode)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [
         context || 'vacuum',
         world_id || null,
+        location_id || null,
         `${myChar.rows[0].name} & ${partnerChar.rows[0].name}`,
         mode,
       ]
@@ -914,6 +926,112 @@ conversationRouter.post('/:id/end', authenticate, async (req: AuthRequest, res: 
     res.json({ success: true, message: 'Conversation ended' });
   } catch (error: any) {
     console.error('End conversation error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/add-to-canon
+ * Analyze the conversation and add key events/relationships to the user's character.
+ * Body: { character_id: string } — the user's character in this conversation
+ */
+conversationRouter.post('/:id/add-to-canon', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+    const { character_id } = req.body;
+
+    if (!character_id) {
+      res.status(400).json({ success: false, message: 'character_id is required' });
+      return;
+    }
+
+    // Verify user owns this character
+    const charCheck = await query(
+      'SELECT id, history FROM characters WHERE id = $1 AND creator_id = $2',
+      [character_id, userId]
+    );
+    if (charCheck.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You do not own this character' });
+      return;
+    }
+
+    // Verify user is a participant in this conversation
+    const participantCheck = await query(
+      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND character_id = $2 AND user_id = $3',
+      [conversationId, character_id, userId]
+    );
+    if (participantCheck.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'This character is not in this conversation' });
+      return;
+    }
+
+    // Use AI to summarize the conversation into canon events + relationship updates
+    const summary = await summarizeForCanon(character_id, conversationId as string);
+
+    // Apply events to character history
+    const existingHistory = charCheck.rows[0].history || [];
+    const newHistory = [
+      ...existingHistory,
+      ...summary.events.map((e) => ({
+        event: e.event,
+        impact: e.impact,
+        date: new Date().toISOString().split('T')[0], // Today's date
+        source: 'canon_chat',
+        conversationId,
+      })),
+    ];
+
+    await query(
+      'UPDATE characters SET history = $1 WHERE id = $2',
+      [JSON.stringify(newHistory), character_id]
+    );
+
+    // Apply relationship updates
+    let relationshipsUpdated = 0;
+    for (const rel of summary.relationships) {
+      if (!rel.characterId) continue;
+
+      // Check if relationship exists
+      const existing = await query(
+        'SELECT id, strength FROM character_relationships WHERE character_id = $1 AND related_character_id = $2',
+        [character_id, rel.characterId]
+      );
+
+      if (existing.rows.length > 0) {
+        // Update existing relationship
+        const newStrength = Math.max(0, Math.min(100, existing.rows[0].strength + rel.strengthChange));
+        await query(
+          `UPDATE character_relationships SET
+            relationship_type = $1, description = $2, strength = $3, updated_at = NOW()
+           WHERE character_id = $4 AND related_character_id = $5`,
+          [rel.type, rel.description, newStrength, character_id, rel.characterId]
+        );
+      } else {
+        // Create new relationship
+        const initialStrength = Math.max(0, Math.min(100, 50 + rel.strengthChange));
+        await query(
+          `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description, strength)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (character_id, related_character_id) DO UPDATE SET
+             relationship_type = $3, description = $4, strength = $5, updated_at = NOW()`,
+          [character_id, rel.characterId, rel.type, rel.description, initialStrength]
+        );
+      }
+      relationshipsUpdated++;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        eventsAdded: summary.events.length,
+        relationshipsUpdated,
+        events: summary.events,
+        relationships: summary.relationships,
+      },
+    });
+  } catch (error: any) {
+    console.error('Add to canon error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

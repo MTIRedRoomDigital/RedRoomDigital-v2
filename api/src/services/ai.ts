@@ -74,7 +74,7 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
 
   // Get conversation context
   const convResult = await query(
-    'SELECT context, world_id FROM conversations WHERE id = $1',
+    'SELECT context, world_id, location_id FROM conversations WHERE id = $1',
     [conversationId]
   );
   const conv = convResult.rows[0];
@@ -179,6 +179,23 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
     }
   }
 
+  // === LOCATION CONTEXT ===
+  if (conv.location_id) {
+    const locationResult = await query(
+      'SELECT name, description, type FROM world_locations WHERE id = $1',
+      [conv.location_id]
+    );
+    if (locationResult.rows.length > 0) {
+      const loc = locationResult.rows[0];
+      sections.push('\n--- CURRENT LOCATION ---');
+      sections.push(`You are currently at: "${loc.name}"${loc.type ? ` (${loc.type})` : ''}`);
+      if (loc.description) {
+        sections.push(`Location description: ${loc.description}`);
+      }
+      sections.push('Reference your surroundings naturally in your responses when appropriate.');
+    }
+  }
+
   // === ROLEPLAY INSTRUCTIONS ===
   sections.push('\n--- ROLEPLAY GUIDELINES ---');
   sections.push('- Write in a natural, conversational way that matches your personality');
@@ -253,4 +270,98 @@ export async function generateAIResponse(
     promptTokens: response.usage?.prompt_tokens || 0,
     completionTokens: response.usage?.completion_tokens || 0,
   };
+}
+
+/**
+ * Summarize a conversation into canon events and relationship updates.
+ * Returns structured JSON for adding to character history and relationships.
+ */
+export async function summarizeForCanon(
+  characterId: string,
+  conversationId: string
+): Promise<{
+  events: { event: string; impact: string }[];
+  relationships: { characterName: string; characterId: string; type: string; description: string; strengthChange: number }[];
+}> {
+  // Get character info
+  const charResult = await query(
+    'SELECT name FROM characters WHERE id = $1',
+    [characterId]
+  );
+  if (charResult.rows.length === 0) throw new Error('Character not found');
+  const charName = charResult.rows[0].name;
+
+  // Get all messages in the conversation
+  const messages = await query(
+    `SELECT m.content, m.sender_type, c.name AS sender_name, c.id AS sender_char_id
+     FROM messages m
+     JOIN characters c ON m.sender_character_id = c.id
+     WHERE m.conversation_id = $1
+     ORDER BY m.created_at ASC`,
+    [conversationId]
+  );
+
+  if (messages.rows.length === 0) {
+    return { events: [], relationships: [] };
+  }
+
+  // Get the other character(s) in this conversation
+  const participants = await query(
+    `SELECT cp.character_id, c.name
+     FROM conversation_participants cp
+     JOIN characters c ON cp.character_id = c.id
+     WHERE cp.conversation_id = $1 AND cp.character_id != $2`,
+    [conversationId, characterId]
+  );
+
+  // Build the conversation text
+  const chatLog = messages.rows
+    .map((m: any) => `${m.sender_name}: ${m.content}`)
+    .join('\n');
+
+  const partnerInfo = participants.rows
+    .map((p: any) => `${p.name} (ID: ${p.character_id})`)
+    .join(', ');
+
+  const prompt = `You are a narrative analyst. Read this roleplay conversation involving "${charName}" and extract canon events and relationship updates FROM ${charName}'s PERSPECTIVE.
+
+CONVERSATION PARTICIPANTS (other than ${charName}): ${partnerInfo}
+
+CONVERSATION:
+${chatLog}
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "events": [
+    { "event": "Brief description of what happened", "impact": "How it affected ${charName}" }
+  ],
+  "relationships": [
+    { "characterName": "Name", "characterId": "UUID", "type": "friend/rival/lover/ally/enemy/acquaintance", "description": "Brief relationship description based on this chat", "strengthChange": 5 }
+  ]
+}
+
+Rules:
+- Extract 1-4 key events that would be meaningful to ${charName}'s story
+- For relationships: strengthChange should be -20 to +20 based on how the interaction went
+- Only include relationship entries for characters who actually interacted
+- Keep descriptions concise (1 sentence each)
+- Return ONLY the JSON, no markdown or explanation`;
+
+  const response = await getOpenAI().chat.completions.create({
+    model: AI_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 800,
+    temperature: 0.3, // Low temperature for structured output
+  });
+
+  const content = response.choices[0].message.content || '{"events":[],"relationships":[]}';
+
+  try {
+    // Strip markdown code blocks if present
+    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    console.error('Failed to parse canon summary:', content);
+    return { events: [], relationships: [] };
+  }
 }

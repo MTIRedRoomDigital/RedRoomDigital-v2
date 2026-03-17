@@ -61,6 +61,8 @@ export default function CharacterDetailPage() {
   const [partnerStatus, setPartnerStatus] = useState<'online' | 'away' | 'offline'>('offline');
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [selectedContext, setSelectedContext] = useState<'vacuum' | 'within_world' | 'multiverse'>('vacuum');
+  const [worldLocations, setWorldLocations] = useState<{ id: string; name: string; type: string | null }[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -146,6 +148,18 @@ export default function CharacterDetailPage() {
       setSelectedContext('vacuum');
     }
 
+    // Fetch locations if partner character has a world
+    setSelectedLocationId(null);
+    setWorldLocations([]);
+    if (character!.world_id) {
+      try {
+        const locRes = await api.get<{ id: string; name: string; type: string | null }[]>(`/api/worlds/${character!.world_id}/locations`);
+        if (locRes.success && locRes.data) {
+          setWorldLocations(locRes.data as any);
+        }
+      } catch { /* ignore */ }
+    }
+
     // Fetch partner user's online status
     try {
       const res = await api.get<{ status: string }>(`/api/users/${character!.creator_id}/presence`);
@@ -168,6 +182,7 @@ export default function CharacterDetailPage() {
       partner_character_id: character!.id,
       context: selectedContext,
       world_id: selectedContext === 'within_world' ? character!.world_id : null,
+      location_id: selectedContext === 'within_world' ? selectedLocationId : null,
       chat_mode: mode,
     });
 
@@ -552,6 +567,25 @@ export default function CharacterDetailPage() {
                 })()}
               </div>
             </div>
+
+            {/* Location Picker — only when "In World" context is selected */}
+            {selectedContext === 'within_world' && worldLocations.length > 0 && (
+              <div className="mb-4">
+                <label className="text-xs uppercase tracking-wider text-slate-500 mb-2 block">Location (optional)</label>
+                <select
+                  value={selectedLocationId || ''}
+                  onChange={(e) => setSelectedLocationId(e.target.value || null)}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">No specific location</option>
+                  {worldLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}{loc.type ? ` (${loc.type})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="space-y-3">
               {/* Option 1: Chat with AI */}

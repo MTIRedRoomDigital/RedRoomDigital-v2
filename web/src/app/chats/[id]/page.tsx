@@ -34,6 +34,8 @@ interface ConversationData {
   title: string;
   is_active: boolean;
   world_id: string | null;
+  location_id: string | null;
+  location: { id: string; name: string; description: string | null; type: string | null } | null;
   chat_mode: 'ai' | 'live' | 'ai_fallback';
   participants: Participant[];
 }
@@ -55,6 +57,8 @@ export default function ChatRoomPage() {
   const [takingOver, setTakingOver] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [addingCanon, setAddingCanon] = useState(false);
+  const [canonResult, setCanonResult] = useState<{ eventsAdded: number; relationshipsUpdated: number; events: { event: string; impact: string }[] } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -287,6 +291,24 @@ export default function ChatRoomPage() {
     setEnding(false);
   };
 
+  // Add conversation to character canon
+  const handleAddToCanon = async () => {
+    if (!myParticipant || addingCanon) return;
+    setAddingCanon(true);
+
+    const res = await api.post<{ eventsAdded: number; relationshipsUpdated: number; events: { event: string; impact: string }[] }>(`/api/conversations/${id}/add-to-canon`, {
+      character_id: myParticipant.character_id,
+    });
+
+    if (res.success && res.data) {
+      setCanonResult(res.data as any);
+    } else {
+      alert((res as any).message || 'Failed to add to canon');
+    }
+
+    setAddingCanon(false);
+  };
+
   // Handle typing indicator
   const handleTyping = () => {
     const socket = getSocket();
@@ -391,20 +413,42 @@ export default function ChatRoomPage() {
               {chatMode === 'live' && partnerParticipant?.owner_name && (
                 <span> &middot; <Link href={`/users/${partnerParticipant.user_id}`} className="text-slate-400 hover:text-red-400 transition-colors">{partnerParticipant.owner_name}</Link></span>
               )}
+              {conversation.location && (
+                <span> &middot; <span className="text-amber-400">📍 {conversation.location.name}</span></span>
+              )}
               {' '}
               <span className={`inline-block w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-slate-600'}`} />
             </p>
           </div>
 
-          {/* End Chat button */}
-          {conversation.is_active && (
-            <button
-              onClick={() => setShowEndConfirm(true)}
-              className="text-xs px-3 py-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 border border-slate-700 hover:border-red-800/50 rounded-lg transition-colors shrink-0"
-            >
-              End Chat
-            </button>
-          )}
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Add to Canon button — only for user's own character, when messages exist */}
+            {messages.length >= 2 && !canonResult && (
+              <button
+                onClick={handleAddToCanon}
+                disabled={addingCanon}
+                className="text-xs px-3 py-1.5 text-amber-400 hover:text-amber-300 hover:bg-amber-900/20 border border-slate-700 hover:border-amber-800/50 rounded-lg transition-colors"
+              >
+                {addingCanon ? '📜 Analyzing...' : '📜 Add to Canon'}
+              </button>
+            )}
+            {canonResult && (
+              <span className="text-xs text-green-400 px-2">
+                ✅ {canonResult.eventsAdded} events added
+              </span>
+            )}
+
+            {/* End Chat button */}
+            {conversation.is_active && (
+              <button
+                onClick={() => setShowEndConfirm(true)}
+                className="text-xs px-3 py-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 border border-slate-700 hover:border-red-800/50 rounded-lg transition-colors"
+              >
+                End Chat
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

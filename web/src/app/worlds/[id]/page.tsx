@@ -29,6 +29,16 @@ interface WorldData {
   campaigns: Campaign[];
   members: Member[];
   characters: WorldCharacter[];
+  locations: WorldLocation[];
+}
+
+interface WorldLocation {
+  id: string;
+  name: string;
+  description: string | null;
+  type: string | null;
+  creator_name: string | null;
+  created_at: string;
 }
 
 interface Campaign {
@@ -65,8 +75,13 @@ export default function WorldDetailPage() {
   const [world, setWorld] = useState<WorldData | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'characters' | 'members' | 'campaigns'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'characters' | 'members' | 'campaigns' | 'locations'>('overview');
   const [showCharPicker, setShowCharPicker] = useState(false);
+  const [showAddLocation, setShowAddLocation] = useState(false);
+  const [newLocName, setNewLocName] = useState('');
+  const [newLocDesc, setNewLocDesc] = useState('');
+  const [newLocType, setNewLocType] = useState('');
+  const [addingLocation, setAddingLocation] = useState(false);
   const [myCharacters, setMyCharacters] = useState<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>([]);
   const [requestingChar, setRequestingChar] = useState<string | null>(null);
 
@@ -110,6 +125,37 @@ export default function WorldDetailPage() {
       }
     }
     setJoining(false);
+  };
+
+  const handleCreateLocation = async () => {
+    if (!world || !newLocName.trim()) return;
+    setAddingLocation(true);
+    const res = await api.post(`/api/worlds/${world.id}/locations`, {
+      name: newLocName.trim(),
+      description: newLocDesc.trim() || null,
+      type: newLocType.trim() || null,
+    });
+    if (res.success) {
+      // Refresh world data
+      const updated = await api.get<WorldData>(`/api/worlds/${world.id}`);
+      if (updated.success && updated.data) setWorld(updated.data as any);
+      setShowAddLocation(false);
+      setNewLocName('');
+      setNewLocDesc('');
+      setNewLocType('');
+    } else {
+      alert((res as any).message || 'Failed to create location');
+    }
+    setAddingLocation(false);
+  };
+
+  const handleDeleteLocation = async (locationId: string) => {
+    if (!world || !confirm('Delete this location?')) return;
+    const res = await api.delete(`/api/worlds/${world.id}/locations/${locationId}`);
+    if (res.success) {
+      const updated = await api.get<WorldData>(`/api/worlds/${world.id}`);
+      if (updated.success && updated.data) setWorld(updated.data as any);
+    }
   };
 
   const openCharPicker = async () => {
@@ -175,6 +221,7 @@ export default function WorldDetailPage() {
     { key: 'overview', label: 'Overview' },
     { key: 'characters', label: `Characters (${world.character_count})` },
     { key: 'members', label: `Members (${world.members?.length || world.member_count})` },
+    { key: 'locations', label: `Locations (${world.locations?.length || 0})` },
     { key: 'campaigns', label: `Campaigns (${world.campaigns.length})` },
   ] as const;
 
@@ -450,6 +497,127 @@ export default function WorldDetailPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'locations' && (
+        <div>
+          {/* Add Location button for WorldMasters */}
+          {(isCreator || isWorldMaster) && (
+            <div className="flex justify-end mb-4">
+              <button
+                onClick={() => setShowAddLocation(true)}
+                className="px-4 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+              >
+                + Add Location
+              </button>
+            </div>
+          )}
+
+          {(!world.locations || world.locations.length === 0) ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-3">📍</div>
+              <p className="text-slate-400 mb-2">No locations yet</p>
+              <p className="text-xs text-slate-500">
+                {isCreator || isWorldMaster
+                  ? 'Create locations like taverns, dungeons, or cities to bring your world to life!'
+                  : 'The WorldMaster hasn\'t added any locations yet.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {world.locations.map((loc) => (
+                <div
+                  key={loc.id}
+                  className="p-4 bg-slate-800 border border-slate-700 rounded-lg group"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📍</span>
+                      <h4 className="font-semibold text-white">{loc.name}</h4>
+                      {loc.type && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400">
+                          {loc.type}
+                        </span>
+                      )}
+                    </div>
+                    {(isCreator || isWorldMaster) && (
+                      <button
+                        onClick={() => handleDeleteLocation(loc.id)}
+                        className="text-xs text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  {loc.description && (
+                    <p className="text-sm text-slate-400 leading-relaxed">{loc.description}</p>
+                  )}
+                  {loc.creator_name && (
+                    <p className="text-[10px] text-slate-600 mt-2">Added by {loc.creator_name}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add Location Modal */}
+          {showAddLocation && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+                <h3 className="text-lg font-bold text-white mb-4">Add Location</h3>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Name *</label>
+                    <input
+                      type="text"
+                      value={newLocName}
+                      onChange={(e) => setNewLocName(e.target.value)}
+                      placeholder="e.g., Tom's Tavern"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Type (optional)</label>
+                    <input
+                      type="text"
+                      value={newLocType}
+                      onChange={(e) => setNewLocType(e.target.value)}
+                      placeholder="e.g., Tavern, Dungeon, City, Forest"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Description</label>
+                    <textarea
+                      value={newLocDesc}
+                      onChange={(e) => setNewLocDesc(e.target.value)}
+                      placeholder="Describe this location... The AI will use this to set the scene during chats."
+                      rows={4}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 resize-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={() => setShowAddLocation(false)}
+                    className="flex-1 py-2 text-sm text-slate-400 hover:text-white border border-slate-600 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateLocation}
+                    disabled={!newLocName.trim() || addingLocation}
+                    className="flex-1 py-2 text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white font-semibold rounded-lg transition-colors"
+                  >
+                    {addingLocation ? 'Creating...' : 'Create Location'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
