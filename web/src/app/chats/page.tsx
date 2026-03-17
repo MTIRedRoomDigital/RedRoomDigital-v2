@@ -93,51 +93,21 @@ export default function ChatsPage() {
     const ctx = contextLabels[conv.context] || contextLabels.vacuum;
     const isAI = conv.chat_mode === 'ai';
     const isFallback = conv.chat_mode === 'ai_fallback';
-
     const isEnded = !conv.is_active;
 
     return (
       <Link
         key={conv.id}
         href={`/chats/${conv.id}`}
-        className={`group flex items-center gap-4 p-4 bg-slate-800 border rounded-xl transition-all ${
+        className={`group block p-4 bg-slate-800 border rounded-xl transition-all ${
           isEnded
             ? 'border-slate-700/50 opacity-60 hover:opacity-80'
             : 'border-slate-700 hover:border-red-500/50'
         }`}
       >
-        {/* Partner Avatar */}
-        <div className="relative shrink-0">
-          {conv.partner?.character_avatar ? (
-            <img
-              src={conv.partner.character_avatar}
-              alt={conv.partner.character_name}
-              className="w-12 h-12 rounded-full object-cover"
-            />
-          ) : (
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${
-              isAI
-                ? 'bg-gradient-to-br from-purple-500 to-blue-600'
-                : isFallback
-                ? 'bg-gradient-to-br from-amber-500 to-orange-600'
-                : 'bg-gradient-to-br from-red-500 to-amber-500'
-            }`}>
-              {isAI ? '🤖' : isFallback ? '⏳' : '🎭'}
-            </div>
-          )}
-          {conv.unread_count > 0 && (
-            <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-[10px] text-white font-bold">
-              {conv.unread_count > 9 ? '9+' : conv.unread_count}
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="font-semibold text-white group-hover:text-red-400 transition-colors truncate">
-              {conv.partner?.character_name || 'Unknown'}
-            </span>
+        {/* Top row: badges + time */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-1.5">
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
               {ctx.label}
             </span>
@@ -146,29 +116,92 @@ export default function ChatsPage() {
                 AI Fallback
               </span>
             )}
-          </div>
-          <p className="text-xs text-slate-500 mb-1">
-            {conv.my_character_name} &harr; {conv.partner?.character_name}
-            {!isAI && conv.partner?.owner_name && (
-              <span className="text-slate-600"> (by {conv.partner.owner_name})</span>
+            {isEnded && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-500">
+                Ended
+              </span>
             )}
-          </p>
-          {conv.last_message ? (
-            <p className="text-sm text-slate-400 truncate">
-              <span className="text-slate-500">{conv.last_message.sender_name}:</span>{' '}
-              {conv.last_message.content}
-            </p>
-          ) : (
-            <p className="text-sm text-slate-500 italic">No messages yet</p>
-          )}
+          </div>
+          <span className="text-[10px] text-slate-600">
+            {conv.last_message
+              ? formatTime(conv.last_message.created_at)
+              : formatTime(conv.updated_at)}
+          </span>
         </div>
 
-        {/* Time */}
-        <div className="text-xs text-slate-500 shrink-0">
-          {conv.last_message
-            ? formatTime(conv.last_message.created_at)
-            : formatTime(conv.updated_at)}
+        {/* Characters row: Your char → Partner char */}
+        <div className="flex items-center gap-3 mb-3">
+          {/* My character */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="relative shrink-0">
+              {conv.my_character_avatar ? (
+                <img src={conv.my_character_avatar} alt={conv.my_character_name} className="w-10 h-10 rounded-full object-cover border-2 border-red-500/50" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-sm border-2 border-red-500/50">
+                  🎭
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-slate-600">You as</p>
+              <p className="text-sm font-medium text-slate-300 truncate">{conv.my_character_name}</p>
+            </div>
+          </div>
+
+          {/* Arrow */}
+          <div className="text-slate-600 shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+            </svg>
+          </div>
+
+          {/* Partner character */}
+          <div className="flex items-center gap-2 flex-1 min-w-0 justify-end text-right">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                {isAI ? 'AI' : 'With'}
+              </p>
+              <p className="text-sm font-semibold text-white group-hover:text-red-400 transition-colors truncate">
+                {conv.partner?.character_name || 'Unknown'}
+              </p>
+              {!isAI && conv.partner?.owner_name && (
+                <p className="text-[10px] text-slate-500 truncate">by {conv.partner.owner_name}</p>
+              )}
+            </div>
+            <div className="relative shrink-0">
+              {conv.partner?.character_avatar ? (
+                <img src={conv.partner.character_avatar} alt={conv.partner?.character_name} className={`w-10 h-10 rounded-full object-cover border-2 ${
+                  isAI ? 'border-purple-500/50' : 'border-green-500/50'
+                }`} />
+              ) : (
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm border-2 ${
+                  isAI
+                    ? 'bg-gradient-to-br from-purple-500 to-blue-600 border-purple-500/50'
+                    : isFallback
+                    ? 'bg-gradient-to-br from-amber-500 to-orange-600 border-amber-500/50'
+                    : 'bg-gradient-to-br from-green-500 to-emerald-600 border-green-500/50'
+                }`}>
+                  {isAI ? '🤖' : '🎭'}
+                </div>
+              )}
+              {conv.unread_count > 0 && (
+                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-[9px] text-white font-bold">
+                  {conv.unread_count > 9 ? '9+' : conv.unread_count}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Last message */}
+        {conv.last_message ? (
+          <p className="text-xs text-slate-400 truncate pl-1 border-l-2 border-slate-700">
+            <span className="text-slate-500 font-medium">{conv.last_message.sender_name}:</span>{' '}
+            {conv.last_message.content}
+          </p>
+        ) : (
+          <p className="text-xs text-slate-500 italic pl-1">No messages yet</p>
+        )}
       </Link>
     );
   };

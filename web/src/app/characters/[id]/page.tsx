@@ -41,6 +41,8 @@ interface MyCharacter {
   id: string;
   name: string;
   avatar_url: string | null;
+  world_id: string | null;
+  world_name?: string | null;
 }
 
 export default function CharacterDetailPage() {
@@ -58,6 +60,7 @@ export default function CharacterDetailPage() {
   const [loadingChat, setLoadingChat] = useState(false);
   const [partnerStatus, setPartnerStatus] = useState<'online' | 'away' | 'offline'>('offline');
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [selectedContext, setSelectedContext] = useState<'vacuum' | 'within_world' | 'multiverse'>('vacuum');
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -113,6 +116,7 @@ export default function CharacterDetailPage() {
       }
       if (chars.length === 1) {
         // Only one character — go directly to mode selection
+        setMyCharacters(chars);
         openModeModal(chars[0].id);
         return;
       }
@@ -128,6 +132,19 @@ export default function CharacterDetailPage() {
     setShowChatModal(false);
     setLoadingStatus(true);
     setShowModeModal(true);
+
+    // Determine the selected character's world to figure out context options
+    const selectedChar = myCharacters.find((c) => c.id === charId);
+    const myWorldId = (selectedChar as any)?.world_id;
+
+    // Set default context based on world membership
+    if (character!.world_id && myWorldId === character!.world_id) {
+      setSelectedContext('within_world');
+    } else if (character!.world_id && myWorldId && myWorldId !== character!.world_id) {
+      setSelectedContext('multiverse');
+    } else {
+      setSelectedContext('vacuum');
+    }
 
     // Fetch partner user's online status
     try {
@@ -149,8 +166,8 @@ export default function CharacterDetailPage() {
     const res = await api.post<{ id: string }>('/api/conversations', {
       character_id: selectedCharId,
       partner_character_id: character!.id,
-      context: character!.world_id ? 'within_world' : 'vacuum',
-      world_id: character!.world_id,
+      context: selectedContext,
+      world_id: selectedContext === 'within_world' ? character!.world_id : null,
       chat_mode: mode,
     });
 
@@ -467,9 +484,74 @@ export default function CharacterDetailPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
             <h3 className="text-lg font-bold text-white mb-1">How would you like to chat?</h3>
-            <p className="text-sm text-slate-400 mb-5">
+            <p className="text-sm text-slate-400 mb-4">
               Choose how to interact with <span className="text-red-400">{character.name}</span>
             </p>
+
+            {/* Context Selector */}
+            <div className="mb-4">
+              <label className="text-xs uppercase tracking-wider text-slate-500 mb-2 block">Chat Context</label>
+              <div className="flex gap-2">
+                {/* Vacuum — always available */}
+                <button
+                  onClick={() => setSelectedContext('vacuum')}
+                  className={`flex-1 py-2 px-3 text-xs rounded-lg border transition-all text-center ${
+                    selectedContext === 'vacuum'
+                      ? 'bg-slate-600 border-slate-500 text-white'
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                  }`}
+                >
+                  <div className="text-base mb-0.5">🌌</div>
+                  Vacuum
+                </button>
+
+                {/* Within World — only if both characters share a world */}
+                {(() => {
+                  const selectedChar = myCharacters.find((c) => c.id === selectedCharId);
+                  const myWorldId = (selectedChar as any)?.world_id;
+                  const sameWorld = character!.world_id && myWorldId === character!.world_id;
+                  return (
+                    <button
+                      onClick={() => sameWorld && setSelectedContext('within_world')}
+                      disabled={!sameWorld}
+                      className={`flex-1 py-2 px-3 text-xs rounded-lg border transition-all text-center ${
+                        !sameWorld
+                          ? 'bg-slate-800/50 border-slate-700/50 text-slate-600 cursor-not-allowed'
+                          : selectedContext === 'within_world'
+                          ? 'bg-amber-900/30 border-amber-700 text-amber-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-amber-700/50'
+                      }`}
+                    >
+                      <div className="text-base mb-0.5">🌍</div>
+                      In World
+                    </button>
+                  );
+                })()}
+
+                {/* Multiverse — if both characters have different worlds */}
+                {(() => {
+                  const selectedChar = myCharacters.find((c) => c.id === selectedCharId);
+                  const myWorldId = (selectedChar as any)?.world_id;
+                  const canMultiverse = character!.world_id && myWorldId && myWorldId !== character!.world_id;
+                  return (
+                    <button
+                      onClick={() => canMultiverse && setSelectedContext('multiverse')}
+                      disabled={!canMultiverse}
+                      className={`flex-1 py-2 px-3 text-xs rounded-lg border transition-all text-center ${
+                        !canMultiverse
+                          ? 'bg-slate-800/50 border-slate-700/50 text-slate-600 cursor-not-allowed'
+                          : selectedContext === 'multiverse'
+                          ? 'bg-purple-900/30 border-purple-700 text-purple-400'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-purple-700/50'
+                      }`}
+                    >
+                      <div className="text-base mb-0.5">✨</div>
+                      Multiverse
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
 
             <div className="space-y-3">
               {/* Option 1: Chat with AI */}
