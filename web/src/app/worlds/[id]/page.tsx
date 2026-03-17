@@ -222,7 +222,7 @@ export default function WorldDetailPage() {
     { key: 'characters', label: `Characters (${world.character_count})` },
     { key: 'members', label: `Members (${world.members?.length || world.member_count})` },
     { key: 'locations', label: `Locations (${world.locations?.length || 0})` },
-    { key: 'campaigns', label: `Campaigns (${world.campaigns.length})` },
+    { key: 'campaigns', label: `Campaigns (${world.campaigns?.length || 0})` },
   ] as const;
 
   return (
@@ -335,7 +335,7 @@ export default function WorldDetailPage() {
           <div className="text-sm text-slate-400">Characters</div>
         </div>
         <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center">
-          <div className="text-2xl font-bold text-white">{world.campaigns.length}</div>
+          <div className="text-2xl font-bold text-white">{world.campaigns?.length || 0}</div>
           <div className="text-sm text-slate-400">Campaigns</div>
         </div>
       </div>
@@ -635,7 +635,7 @@ export default function WorldDetailPage() {
             </div>
           )}
 
-          {world.campaigns.length === 0 ? (
+          {(!world.campaigns || world.campaigns.length === 0) ? (
             <div className="text-center py-12">
               <div className="text-4xl mb-3">⚔️</div>
               <p className="text-slate-400 mb-2">No campaigns yet</p>

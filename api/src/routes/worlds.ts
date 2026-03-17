@@ -83,11 +83,16 @@ worldRouter.get('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    // Get campaigns in this world
-    const campaigns = await query(
-      'SELECT * FROM campaigns WHERE world_id = $1 ORDER BY sort_order',
-      [req.params.id]
-    );
+    // Get campaigns in this world (safely — table may not exist yet)
+    let campaigns = { rows: [] as any[] };
+    try {
+      campaigns = await query(
+        'SELECT * FROM campaigns WHERE world_id = $1 ORDER BY sort_order',
+        [req.params.id]
+      );
+    } catch (e) {
+      // campaigns table may not exist yet
+    }
 
     // Get character count
     const charCount = await query(
