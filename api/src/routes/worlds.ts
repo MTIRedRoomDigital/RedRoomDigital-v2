@@ -141,6 +141,7 @@ worldRouter.get('/:id', async (req: Request, res: Response) => {
         members: members.rows,
         characters: characters.rows,
         locations: locations.rows,
+        world_history: result.rows[0].world_history || [],
       },
     });
   } catch (error: any) {

@@ -30,6 +30,7 @@ interface WorldData {
   members: Member[];
   characters: WorldCharacter[];
   locations: WorldLocation[];
+  world_history: { event: string; impact: string; type?: string; campaignName?: string; date?: string }[];
 }
 
 interface WorldLocation {
@@ -84,6 +85,15 @@ export default function WorldDetailPage() {
   const [addingLocation, setAddingLocation] = useState(false);
   const [myCharacters, setMyCharacters] = useState<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>([]);
   const [requestingChar, setRequestingChar] = useState<string | null>(null);
+
+  // Campaign creation state
+  const [showCreateCampaign, setShowCreateCampaign] = useState(false);
+  const [newCampName, setNewCampName] = useState('');
+  const [newCampDesc, setNewCampDesc] = useState('');
+  const [newCampPremise, setNewCampPremise] = useState('');
+  const [newCampMin, setNewCampMin] = useState(2);
+  const [newCampMax, setNewCampMax] = useState(6);
+  const [creatingCampaign, setCreatingCampaign] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -185,6 +195,33 @@ export default function WorldDetailPage() {
       alert((res as any).message || 'Failed to send request');
     }
     setRequestingChar(null);
+  };
+
+  const handleCreateCampaign = async () => {
+    if (!world || !newCampName.trim()) return;
+    setCreatingCampaign(true);
+    const res = await api.post('/api/campaigns', {
+      world_id: world.id,
+      name: newCampName.trim(),
+      description: newCampDesc.trim() || null,
+      premise: newCampPremise.trim() || null,
+      min_participants: newCampMin,
+      max_participants: newCampMax,
+    });
+    if (res.success) {
+      // Refresh world data
+      const updated = await api.get<WorldData>(`/api/worlds/${world.id}`);
+      if (updated.success && updated.data) setWorld(updated.data as any);
+      setShowCreateCampaign(false);
+      setNewCampName('');
+      setNewCampDesc('');
+      setNewCampPremise('');
+      setNewCampMin(2);
+      setNewCampMax(6);
+    } else {
+      alert((res as any).message || 'Failed to create campaign');
+    }
+    setCreatingCampaign(false);
   };
 
   if (loading) {
@@ -406,8 +443,32 @@ export default function WorldDetailPage() {
             </div>
           )}
 
+          {/* World History (from campaigns) */}
+          {world.world_history && world.world_history.length > 0 && (
+            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <span>&#x2694;&#xFE0F;</span> World History
+              </h3>
+              <div className="space-y-3">
+                {world.world_history.map((event: any, i: number) => (
+                  <div key={i} className="flex gap-3 p-3 bg-slate-750 rounded-lg border-l-2 border-amber-500/50">
+                    <div className="flex-1">
+                      <p className="text-sm text-white font-medium">{event.event}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{event.impact}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-500">
+                        {event.campaignName && <span>Campaign: {event.campaignName}</span>}
+                        {event.type && <span className="px-1.5 py-0.5 bg-slate-700 rounded">{event.type}</span>}
+                        {event.date && <span>{new Date(event.date).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Empty state */}
-          {!world.lore && (!world.rules || Object.keys(world.rules).length === 0) && (
+          {!world.lore && (!world.rules || Object.keys(world.rules).length === 0) && (!world.world_history || world.world_history.length === 0) && (
             <div className="text-center py-12">
               <p className="text-slate-500 italic">
                 {isCreator
@@ -623,29 +684,32 @@ export default function WorldDetailPage() {
 
       {activeTab === 'campaigns' && (
         <div>
-          {/* WorldMaster link to full campaigns management page */}
-          {isWorldMaster && (
+          {/* Create Campaign button for WorldMasters */}
+          {(isCreator || isWorldMaster) && (
             <div className="flex justify-end mb-4">
-              <Link
-                href={`/worlds/${world.id}/campaigns`}
+              <button
+                onClick={() => setShowCreateCampaign(true)}
                 className="px-4 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
               >
-                + Manage Campaigns
-              </Link>
+                + New Campaign
+              </button>
             </div>
           )}
 
           {(!world.campaigns || world.campaigns.length === 0) ? (
             <div className="text-center py-12">
-              <div className="text-4xl mb-3">⚔️</div>
+              <div className="text-4xl mb-3">&#x2694;&#xFE0F;</div>
               <p className="text-slate-400 mb-2">No campaigns yet</p>
-              {isWorldMaster && (
-                <Link
-                  href={`/worlds/${world.id}/campaigns`}
+              <p className="text-xs text-slate-500 mb-4">
+                Campaigns are world-changing events: wars, elections, discoveries. Multiple characters participate in a turn-based chat, and the results become part of world canon.
+              </p>
+              {(isCreator || isWorldMaster) && (
+                <button
+                  onClick={() => setShowCreateCampaign(true)}
                   className="mt-3 px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-block text-sm"
                 >
                   Create Your First Campaign
-                </Link>
+                </button>
               )}
             </div>
           ) : (
@@ -663,9 +727,11 @@ export default function WorldDetailPage() {
                         ? 'bg-green-900/30 text-green-400'
                         : campaign.status === 'completed'
                         ? 'bg-blue-900/30 text-blue-400'
-                        : 'bg-slate-700 text-slate-400'
+                        : campaign.status === 'archived'
+                        ? 'bg-slate-700 text-slate-400'
+                        : 'bg-yellow-900/30 text-yellow-400'
                     }`}>
-                      {campaign.status}
+                      {campaign.status === 'draft' ? 'Recruiting' : campaign.status}
                     </span>
                   </div>
                   {campaign.description && (
@@ -673,15 +739,90 @@ export default function WorldDetailPage() {
                   )}
                 </Link>
               ))}
+            </div>
+          )}
 
-              {/* Link to see all campaigns */}
-              <div className="text-center pt-2">
-                <Link
-                  href={`/worlds/${world.id}/campaigns`}
-                  className="text-sm text-amber-400 hover:text-amber-300 transition-colors"
-                >
-                  View all campaigns &rarr;
-                </Link>
+          {/* Create Campaign Modal */}
+          {showCreateCampaign && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg mx-4 shadow-2xl">
+                <h3 className="text-lg font-bold text-white mb-1">Create Campaign</h3>
+                <p className="text-sm text-slate-400 mb-4">
+                  A campaign is a world-changing event. Characters will take turns in a group chat, and the results can become part of world canon.
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Campaign Name *</label>
+                    <input
+                      type="text"
+                      value={newCampName}
+                      onChange={(e) => setNewCampName(e.target.value)}
+                      placeholder="e.g., The Siege of Iron Keep"
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Description</label>
+                    <textarea
+                      value={newCampDesc}
+                      onChange={(e) => setNewCampDesc(e.target.value)}
+                      placeholder="What is this campaign about?"
+                      rows={2}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 resize-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Premise (setting the scene)</label>
+                    <textarea
+                      value={newCampPremise}
+                      onChange={(e) => setNewCampPremise(e.target.value)}
+                      placeholder="Set the scene... what's happening in the world that triggers this event?"
+                      rows={3}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-400 mb-1 block">Min Participants</label>
+                      <input
+                        type="number"
+                        min={2}
+                        max={10}
+                        value={newCampMin}
+                        onChange={(e) => setNewCampMin(parseInt(e.target.value) || 2)}
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-400 mb-1 block">Max Participants</label>
+                      <input
+                        type="number"
+                        min={2}
+                        max={10}
+                        value={newCampMax}
+                        onChange={(e) => setNewCampMax(parseInt(e.target.value) || 6)}
+                        className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={() => setShowCreateCampaign(false)}
+                    className="flex-1 py-2 text-sm text-slate-400 hover:text-white border border-slate-600 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateCampaign}
+                    disabled={!newCampName.trim() || creatingCampaign}
+                    className="flex-1 py-2 text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white font-semibold rounded-lg transition-colors"
+                  >
+                    {creatingCampaign ? 'Creating...' : 'Create Campaign'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

@@ -33,6 +33,12 @@ const typeIcons: Record<string, string> = {
   canon_removal_request: '🗑️',
   canon_removal_accepted: '🗑️',
   canon_removal_rejected: '🗑️',
+  campaign_join: '⚔️',
+  campaign_started: '⚔️',
+  campaign_turn: '🎯',
+  campaign_ended: '🏁',
+  campaign_approved: '📜',
+  campaign_rejected: '❌',
   system: '📢',
 };
 
@@ -110,6 +116,16 @@ export default function NotificationsPage() {
           router.push(`/chats/${n.data.conversationId}`);
         }
         break;
+      case 'campaign_join':
+      case 'campaign_started':
+      case 'campaign_turn':
+      case 'campaign_ended':
+      case 'campaign_approved':
+      case 'campaign_rejected':
+        if (n.data?.campaignId) {
+          router.push(`/campaigns/${n.data.campaignId}`);
+        }
+        break;
       default:
         break;
     }
@@ -163,6 +179,7 @@ export default function NotificationsPage() {
     if ((n.type === 'world_character_accepted' || n.type === 'world_character_rejected') && n.data?.worldId) return true;
     if (n.type === 'world_character_request' && n.data?.worldId) return true;
     if (['canon_request', 'canon_accepted', 'canon_rejected', 'canon_removal_request', 'canon_removal_accepted', 'canon_removal_rejected'].includes(n.type) && n.data?.conversationId) return true;
+    if (['campaign_join', 'campaign_started', 'campaign_turn', 'campaign_ended', 'campaign_approved', 'campaign_rejected'].includes(n.type) && n.data?.campaignId) return true;
     return false;
   };
 

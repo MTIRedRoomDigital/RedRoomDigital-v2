@@ -2,9 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 
 export function Footer() {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   // Hide footer on individual chat pages — the chat UI fills the viewport
   if (pathname?.match(/^\/chats\/[^/]+$/)) {
@@ -46,11 +48,13 @@ export function Footer() {
                   Community Forum
                 </Link>
               </li>
-              <li>
-                <Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">
-                  Pricing
-                </Link>
-              </li>
+              {!user && (
+                <li>
+                  <Link href="/pricing" className="text-sm text-slate-400 hover:text-white transition-colors">
+                    Pricing
+                  </Link>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -68,11 +72,13 @@ export function Footer() {
                   New World
                 </Link>
               </li>
-              <li>
-                <Link href="/register" className="text-sm text-slate-400 hover:text-white transition-colors">
-                  Sign Up
-                </Link>
-              </li>
+              {!user && (
+                <li>
+                  <Link href="/register" className="text-sm text-slate-400 hover:text-white transition-colors">
+                    Sign Up
+                  </Link>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -81,13 +87,19 @@ export function Footer() {
             <h4 className="text-sm font-semibold text-white mb-4">Info</h4>
             <ul className="space-y-2.5">
               <li>
-                <span className="text-sm text-slate-500">Terms of Service</span>
+                <Link href="/terms" className="text-sm text-slate-400 hover:text-white transition-colors">
+                  Terms of Service
+                </Link>
               </li>
               <li>
-                <span className="text-sm text-slate-500">Privacy Policy</span>
+                <Link href="/privacy" className="text-sm text-slate-400 hover:text-white transition-colors">
+                  Privacy Policy
+                </Link>
               </li>
               <li>
-                <span className="text-sm text-slate-500">Contact</span>
+                <Link href="/contact" className="text-sm text-slate-400 hover:text-white transition-colors">
+                  Contact
+                </Link>
               </li>
             </ul>
           </div>

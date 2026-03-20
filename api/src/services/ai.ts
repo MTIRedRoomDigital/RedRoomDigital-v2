@@ -365,3 +365,92 @@ Rules:
     return { events: [], relationships: [] };
   }
 }
+
+/**
+ * Summarize a campaign conversation into world-level canon events and character updates.
+ * Used when a WorldMaster approves campaign results.
+ *
+ * Returns:
+ * - worldEvents: Things that changed in the world (buildings destroyed, people elected, wars won)
+ * - characterUpdates: Per-character events from their perspective
+ * - outcome: A 1-2 sentence summary of what happened
+ */
+export async function summarizeForWorldCanon(
+  conversationId: string,
+  campaignName: string,
+  worldName: string,
+  characters: { id: string; name: string }[]
+): Promise<{
+  worldEvents: { event: string; impact: string; type: string }[];
+  characterUpdates: { characterId: string; characterName: string; events: { event: string; impact: string }[] }[];
+  outcome: string;
+}> {
+  // Get all messages
+  const messages = await query(
+    `SELECT m.content, c.name AS sender_name
+     FROM messages m
+     JOIN characters c ON m.sender_character_id = c.id
+     WHERE m.conversation_id = $1
+     ORDER BY m.created_at ASC`,
+    [conversationId]
+  );
+
+  if (messages.rows.length === 0) {
+    return { worldEvents: [], characterUpdates: [], outcome: 'Nothing happened.' };
+  }
+
+  const chatLog = messages.rows
+    .map((m: any) => `${m.sender_name}: ${m.content}`)
+    .join('\n');
+
+  const charList = characters.map((c) => `${c.name} (ID: ${c.id})`).join(', ');
+
+  const prompt = `You are a narrative historian analyzing a campaign event in the world of "${worldName}".
+Campaign name: "${campaignName}"
+Characters involved: ${charList}
+
+CONVERSATION:
+${chatLog}
+
+Analyze this campaign and respond with ONLY valid JSON in this exact format:
+{
+  "worldEvents": [
+    { "event": "What changed in the world", "impact": "How it affects the world going forward", "type": "destruction|political|social|economic|military|discovery|other" }
+  ],
+  "characterUpdates": [
+    {
+      "characterId": "UUID",
+      "characterName": "Name",
+      "events": [
+        { "event": "What happened to this character", "impact": "How it affected them" }
+      ]
+    }
+  ],
+  "outcome": "1-2 sentence summary of what happened in this campaign"
+}
+
+Rules:
+- worldEvents: Extract 1-5 permanent changes to the world (buildings destroyed, leaders elected, alliances formed, etc.)
+- characterUpdates: For each character, extract 1-3 personal events
+- outcome: Brief, dramatic summary suitable for a world history timeline
+- Keep descriptions concise but flavorful
+- Only include changes that actually happened based on the conversation
+- Return ONLY the JSON, no markdown`;
+
+  const response = await getOpenAI().chat.completions.create({
+    model: AI_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 1200,
+    temperature: 0.3,
+  });
+
+  const content = response.choices[0].message.content || '{"worldEvents":[],"characterUpdates":[],"outcome":"Nothing happened."}';
+
+  try {
+    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch {
+    console.error('Failed to parse world canon summary:', content);
+    return { worldEvents: [], characterUpdates: [], outcome: 'Campaign concluded.' };
+  }
+}

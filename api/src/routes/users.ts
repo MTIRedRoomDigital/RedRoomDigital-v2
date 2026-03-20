@@ -217,7 +217,11 @@ userRouter.get('/:id/public', async (req, res: Response) => {
 userRouter.get('/characters', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      'SELECT * FROM characters WHERE creator_id = $1 ORDER BY created_at DESC',
+      `SELECT c.*, w.name AS world_name
+       FROM characters c
+       LEFT JOIN worlds w ON c.world_id = w.id
+       WHERE c.creator_id = $1
+       ORDER BY c.created_at DESC`,
       [req.user!.id]
     );
 
