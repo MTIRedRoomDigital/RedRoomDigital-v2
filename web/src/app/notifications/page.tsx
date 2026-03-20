@@ -30,6 +30,9 @@ const typeIcons: Record<string, string> = {
   canon_request: '📜',
   canon_accepted: '📜',
   canon_rejected: '📜',
+  canon_removal_request: '🗑️',
+  canon_removal_accepted: '🗑️',
+  canon_removal_rejected: '🗑️',
   system: '📢',
 };
 
@@ -67,6 +70,7 @@ export default function NotificationsPage() {
     // Don't navigate for actionable request notifications — they have inline buttons
     if (n.type === 'world_character_request' && !n.is_read) return;
     if (n.type === 'canon_request' && !n.is_read) return;
+    if (n.type === 'canon_removal_request' && !n.is_read) return;
 
     // Mark as read first
     if (!n.is_read) await markRead(n.id);
@@ -99,6 +103,9 @@ export default function NotificationsPage() {
       case 'canon_request':
       case 'canon_accepted':
       case 'canon_rejected':
+      case 'canon_removal_request':
+      case 'canon_removal_accepted':
+      case 'canon_removal_rejected':
         if (n.data?.conversationId) {
           router.push(`/chats/${n.data.conversationId}`);
         }
@@ -135,13 +142,27 @@ export default function NotificationsPage() {
     setResponding(null);
   };
 
+  const handleCanonRemovalRequest = async (n: Notification, action: 'accept' | 'reject') => {
+    setResponding(n.id);
+    const res = await api.post(`/api/conversations/${n.data.conversationId}/canon-removal-request/respond`, {
+      notification_id: n.id,
+      action,
+    });
+    if (res.success) {
+      setNotifications((prev) => prev.map((notif) => (notif.id === n.id ? { ...notif, is_read: true } : notif)));
+    } else {
+      alert((res as any).message || 'Something went wrong');
+    }
+    setResponding(null);
+  };
+
   // Check if a notification type has a navigation target
   const isActionable = (n: Notification) => {
     if ((n.type === 'friend_request' || n.type === 'friend_accepted') && n.data?.fromUserId) return true;
     if ((n.type === 'chat_message' || n.type === 'chat_request') && n.data?.conversationId) return true;
     if ((n.type === 'world_character_accepted' || n.type === 'world_character_rejected') && n.data?.worldId) return true;
     if (n.type === 'world_character_request' && n.data?.worldId) return true;
-    if ((n.type === 'canon_request' || n.type === 'canon_accepted' || n.type === 'canon_rejected') && n.data?.conversationId) return true;
+    if (['canon_request', 'canon_accepted', 'canon_rejected', 'canon_removal_request', 'canon_removal_accepted', 'canon_removal_rejected'].includes(n.type) && n.data?.conversationId) return true;
     return false;
   };
 
@@ -246,6 +267,25 @@ export default function NotificationsPage() {
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCanonRequest(n, 'reject'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                  {/* Accept/Reject buttons for canon removal requests */}
+                  {n.type === 'canon_removal_request' && !n.is_read && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCanonRemovalRequest(n, 'accept'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs bg-red-600 hover:bg-red-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                      >
+                        {responding === n.id ? '🗑️ Removing...' : '🗑️ Accept & Remove Canon'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCanonRemovalRequest(n, 'reject'); }}
                         disabled={responding === n.id}
                         className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
                       >

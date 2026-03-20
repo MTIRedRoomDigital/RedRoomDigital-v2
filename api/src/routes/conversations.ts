@@ -1175,3 +1175,192 @@ async function applyCanonToCharacter(characterId: string, conversationId: string
 
   return { eventsAdded: summary.events.length, relationshipsUpdated };
 }
+
+/**
+ * POST /api/conversations/:id/canon-removal-request
+ * Request to remove canon events from a specific conversation for both characters.
+ * Only the character owner can request this. The other user must agree.
+ * Body: { character_id: string }
+ */
+conversationRouter.post('/:id/canon-removal-request', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id as string;
+    const { character_id } = req.body;
+
+    if (!character_id) {
+      res.status(400).json({ success: false, message: 'character_id is required' });
+      return;
+    }
+
+    // Verify user owns this character and was a participant
+    const myParticipant = await query(
+      `SELECT cp.character_id, c.name AS character_name, c.history
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND cp.character_id = $2 AND cp.user_id = $3`,
+      [conversationId, character_id, userId]
+    );
+    if (myParticipant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'This character is not yours in this conversation' });
+      return;
+    }
+
+    // Check this conversation actually has canon events for this character
+    const history = myParticipant.rows[0].history || [];
+    const canonEvents = history.filter((h: any) => h.conversationId === conversationId && h.source === 'canon_chat');
+    if (canonEvents.length === 0) {
+      res.status(400).json({ success: false, message: 'No canon events from this conversation to remove' });
+      return;
+    }
+
+    // Get the other participant
+    const otherParticipant = await query(
+      `SELECT cp.user_id, cp.character_id, c.name AS character_name, u.username
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       JOIN users u ON cp.user_id = u.id
+       WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+      [conversationId, userId]
+    );
+
+    if (otherParticipant.rows.length === 0) {
+      // Solo chat — remove directly
+      await removeCanonFromCharacter(character_id, conversationId);
+      res.json({ success: true, message: 'Canon events removed from your character', solo: true });
+      return;
+    }
+
+    const other = otherParticipant.rows[0];
+
+    // Check for existing pending removal request
+    const existingNotif = await query(
+      `SELECT id FROM notifications
+       WHERE user_id = $1 AND type = 'canon_removal_request' AND is_read = false
+       AND data->>'conversationId' = $2
+       LIMIT 1`,
+      [other.user_id, conversationId]
+    );
+    if (existingNotif.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'A removal request for this conversation is already pending' });
+      return;
+    }
+
+    // Send notification to the other user
+    await createNotification({
+      userId: other.user_id,
+      type: 'canon_removal_request',
+      title: 'Canon Removal Request',
+      body: `${req.user!.username} wants to remove the canon from the chat between ${myParticipant.rows[0].character_name} & ${other.character_name}`,
+      data: {
+        conversationId,
+        fromUserId: userId,
+        fromUsername: req.user!.username,
+        fromCharacterId: character_id,
+        fromCharacterName: myParticipant.rows[0].character_name,
+        toCharacterId: other.character_id,
+        toCharacterName: other.character_name,
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: `Removal request sent to ${other.username}` });
+  } catch (error: any) {
+    console.error('Canon removal request error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/canon-removal-request/respond
+ * Accept or reject a canon removal request. If accepted, canon events are removed from both characters.
+ * Body: { notification_id: string, action: 'accept' | 'reject' }
+ */
+conversationRouter.post('/:id/canon-removal-request/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id as string;
+    const { notification_id, action } = req.body;
+
+    if (!notification_id || !['accept', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, message: 'notification_id and action (accept/reject) are required' });
+      return;
+    }
+
+    // Get the notification
+    const notifResult = await query(
+      'SELECT id, data FROM notifications WHERE id = $1 AND user_id = $2',
+      [notification_id, userId]
+    );
+    if (notifResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Notification not found' });
+      return;
+    }
+
+    const notifData = notifResult.rows[0].data;
+
+    // Mark notification as read
+    await query('UPDATE notifications SET is_read = true WHERE id = $1', [notification_id]);
+
+    if (action === 'reject') {
+      await createNotification({
+        userId: notifData.fromUserId,
+        type: 'canon_removal_rejected',
+        title: 'Removal Request Declined',
+        body: `${req.user!.username} declined removing the canon from the chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName}`,
+        data: { conversationId },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'Removal request declined' });
+      return;
+    }
+
+    // === ACCEPTED — remove canon from BOTH characters ===
+    const fromCharId = notifData.fromCharacterId as string;
+    const toCharId = notifData.toCharacterId as string;
+
+    const removed1 = await removeCanonFromCharacter(fromCharId, conversationId);
+    const removed2 = await removeCanonFromCharacter(toCharId, conversationId);
+
+    await createNotification({
+      userId: notifData.fromUserId,
+      type: 'canon_removal_accepted',
+      title: 'Canon Removed',
+      body: `${req.user!.username} agreed. The canon from the chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName} has been removed`,
+      data: {
+        conversationId,
+        eventsRemoved: (removed1 || 0) + (removed2 || 0),
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({
+      success: true,
+      message: 'Canon events removed from both characters',
+      data: { eventsRemoved1: removed1, eventsRemoved2: removed2 },
+    });
+  } catch (error: any) {
+    console.error('Canon removal respond error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * Helper: Remove canon events from a single character for a specific conversation
+ */
+async function removeCanonFromCharacter(characterId: string, conversationId: string): Promise<number> {
+  const charResult = await query('SELECT id, history FROM characters WHERE id = $1', [characterId]);
+  if (charResult.rows.length === 0) return 0;
+
+  const history = charResult.rows[0].history || [];
+  const before = history.length;
+  const filtered = history.filter((h: any) => !(h.conversationId === conversationId && h.source === 'canon_chat'));
+  const removed = before - filtered.length;
+
+  if (removed > 0) {
+    await query('UPDATE characters SET history = $1 WHERE id = $2', [JSON.stringify(filtered), characterId]);
+  }
+
+  return removed;
+}

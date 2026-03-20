@@ -18,7 +18,7 @@ interface Character {
   background: string | null;
   likes: string[];
   dislikes: string[];
-  history: { event: string; date?: string; impact?: string }[];
+  history: { event: string; date?: string; impact?: string; source?: string; conversationId?: string }[];
   world_id: string | null;
   world_name: string | null;
   is_public: boolean;
@@ -63,6 +63,8 @@ export default function CharacterDetailPage() {
   const [selectedContext, setSelectedContext] = useState<'vacuum' | 'within_world' | 'multiverse'>('vacuum');
   const [worldLocations, setWorldLocations] = useState<{ id: string; name: string; type: string | null }[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [requestingRemoval, setRequestingRemoval] = useState<string | null>(null);
+  const [removalRequested, setRemovalRequested] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -433,14 +435,69 @@ export default function CharacterDetailPage() {
           <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl md:col-span-2">
             <h2 className="text-lg font-semibold text-white mb-4">📅 History</h2>
             <div className="space-y-3">
-              {character.history.map((event, i) => (
-                <div key={i} className="flex gap-3 pl-4 border-l-2 border-slate-600">
-                  <div>
-                    <p className="text-sm text-slate-300">{event.event}</p>
-                    {event.date && <p className="text-xs text-slate-500 mt-0.5">{event.date}</p>}
-                  </div>
-                </div>
-              ))}
+              {(() => {
+                // Group canon events by conversationId so we show one removal button per conversation
+                const canonConversations = new Set<string>();
+                character.history.forEach((e) => {
+                  if (e.source === 'canon_chat' && e.conversationId) {
+                    canonConversations.add(e.conversationId);
+                  }
+                });
+
+                let lastConvId: string | undefined;
+
+                return character.history.map((event, i) => {
+                  const isCanon = event.source === 'canon_chat' && event.conversationId;
+                  const convId = event.conversationId;
+                  // Show the removal button only on the first event of each canon conversation group
+                  const showRemovalBtn = isCanon && convId && convId !== lastConvId && isOwner;
+                  if (isCanon && convId) lastConvId = convId;
+
+                  return (
+                    <div key={i}>
+                      {/* Canon conversation group header with removal button */}
+                      {showRemovalBtn && (
+                        <div className="flex items-center gap-2 mb-1 mt-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400">
+                            📜 Canon
+                          </span>
+                          {removalRequested.has(convId!) ? (
+                            <span className="text-[10px] text-green-400">✅ Removal requested</span>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                setRequestingRemoval(convId!);
+                                const res = await api.post(`/api/conversations/${convId}/canon-removal-request`, {
+                                  character_id: character.id,
+                                });
+                                if (res.success) {
+                                  setRemovalRequested((prev) => new Set(prev).add(convId!));
+                                } else {
+                                  alert((res as any).message || 'Failed to send removal request');
+                                }
+                                setRequestingRemoval(null);
+                              }}
+                              disabled={requestingRemoval === convId}
+                              className="text-[10px] text-red-400 hover:text-red-300 transition-colors disabled:text-slate-600"
+                            >
+                              {requestingRemoval === convId ? 'Requesting...' : 'Request Removal'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <div className={`flex gap-3 pl-4 border-l-2 ${isCanon ? 'border-amber-700/50' : 'border-slate-600'}`}>
+                        <div className="flex-1">
+                          <p className="text-sm text-slate-300">{event.event}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {event.date && <p className="text-xs text-slate-500">{event.date}</p>}
+                            {event.impact && <p className="text-xs text-slate-600 italic">{event.impact}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
