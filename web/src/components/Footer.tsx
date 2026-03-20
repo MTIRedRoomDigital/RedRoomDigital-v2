@@ -19,10 +19,13 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <Link href="/" className="text-xl font-bold">
-              <span className="text-red-500">Red</span>
-              <span className="text-white">Room</span>
-              <span className="text-amber-400">Digital</span>
+            <Link href="/" className="flex items-center gap-2">
+              <img src="/logo.png" alt="RedRoomDigital" className="h-10 w-10 rounded-md object-cover" />
+              <span className="text-xl font-bold">
+                <span className="text-red-500">Red</span>
+                <span className="text-white">Room</span>
+                <span className="text-amber-400">Digital</span>
+              </span>
             </Link>
             <p className="text-sm text-slate-500 mt-3 leading-relaxed">
               AI-powered character creation, world building, and collaborative roleplaying.

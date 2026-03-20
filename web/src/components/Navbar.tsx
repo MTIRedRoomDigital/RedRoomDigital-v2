@@ -48,10 +48,13 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 border-b border-slate-700 bg-slate-900/90 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="text-xl font-bold" onClick={() => setMobileOpen(false)}>
-          <span className="text-red-500">Red</span>
-          <span className="text-white">Room</span>
-          <span className="text-amber-400">Digital</span>
+        <Link href="/" className="flex items-center gap-2" onClick={() => setMobileOpen(false)}>
+          <img src="/logo.png" alt="RedRoomDigital" className="h-9 w-9 rounded-md object-cover" />
+          <span className="text-xl font-bold hidden sm:inline">
+            <span className="text-red-500">Red</span>
+            <span className="text-white">Room</span>
+            <span className="text-amber-400">Digital</span>
+          </span>
         </Link>
 
         {/* Desktop Nav Links */}

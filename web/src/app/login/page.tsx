@@ -63,6 +63,7 @@ function LoginContent() {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
+          <img src="/logo.png" alt="RedRoomDigital" className="h-16 w-16 rounded-lg object-cover mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
           <p className="text-slate-400">Log in to continue your adventures</p>
         </div>

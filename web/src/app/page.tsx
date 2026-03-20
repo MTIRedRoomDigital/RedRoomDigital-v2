@@ -45,6 +45,9 @@ export default function Home() {
         </div>
 
         <div className="relative max-w-6xl mx-auto px-4 pt-20 pb-24 text-center">
+          {/* Logo */}
+          <img src="/logo.png" alt="RedRoomDigital" className="h-24 w-24 md:h-32 md:w-32 rounded-xl object-cover mx-auto mb-6 shadow-lg shadow-red-500/20" />
+
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full text-sm text-red-400 mb-8">
             <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />

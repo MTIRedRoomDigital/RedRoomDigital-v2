@@ -52,6 +52,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
+          <img src="/logo.png" alt="RedRoomDigital" className="h-16 w-16 rounded-lg object-cover mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
           <p className="text-slate-400">Join RedRoomDigital and start creating characters</p>
         </div>
