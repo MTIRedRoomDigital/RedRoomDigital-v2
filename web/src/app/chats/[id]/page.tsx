@@ -37,6 +37,7 @@ interface ConversationData {
   location_id: string | null;
   location: { id: string; name: string; description: string | null; type: string | null } | null;
   chat_mode: 'ai' | 'live' | 'ai_fallback';
+  is_canon: boolean;
   participants: Participant[];
 }
 
@@ -407,6 +408,11 @@ export default function ChatRoomPage() {
                   Live
                 </span>
               )}
+              {conversation.is_canon && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-800/50">
+                  📜 Canon
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
               Chatting as <span className="text-slate-400">{myParticipant?.character_name}</span>
@@ -612,22 +618,29 @@ export default function ChatRoomPage() {
           <div className="max-w-3xl mx-auto text-center space-y-2">
             <p className="text-slate-500 text-sm">This conversation has ended.</p>
 
-            {/* Canon request button — only after chat ends, with enough messages */}
-            {messages.length >= 2 && !canonRequestSent && (
-              <button
-                onClick={handleCanonRequest}
-                disabled={requestingCanon}
-                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
-              >
-                {requestingCanon
-                  ? '📜 Sending request...'
-                  : `📜 Request ${partnerParticipant?.owner_name || 'other player'} to add to canon`}
-              </button>
-            )}
-            {canonRequestSent && (
-              <p className="text-sm text-green-400">
-                ✅ Canon request sent! Waiting for {partnerParticipant?.owner_name || 'the other player'} to accept.
-              </p>
+            {/* Canon status or request button */}
+            {conversation.is_canon ? (
+              <p className="text-sm text-amber-400 font-medium">📜 This conversation is canon</p>
+            ) : (
+              <>
+                {/* Canon request button — only after chat ends, with enough messages */}
+                {messages.length >= 2 && !canonRequestSent && (
+                  <button
+                    onClick={handleCanonRequest}
+                    disabled={requestingCanon}
+                    className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                  >
+                    {requestingCanon
+                      ? '📜 Sending request...'
+                      : `📜 Request ${partnerParticipant?.owner_name || 'other player'} to add to canon`}
+                  </button>
+                )}
+                {canonRequestSent && (
+                  <p className="text-sm text-green-400">
+                    ✅ Canon request sent! Waiting for {partnerParticipant?.owner_name || 'the other player'} to accept.
+                  </p>
+                )}
+              </>
             )}
 
             <div>

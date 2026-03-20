@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { ChatTabs } from "@/components/ChatTabs";
 
 export const metadata: Metadata = {
   title: "RedRoomDigital - Character Creation & Roleplaying Platform",
@@ -21,6 +22,7 @@ export default function RootLayout({
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />
+          <ChatTabs />
         </AuthProvider>
       </body>
     </html>

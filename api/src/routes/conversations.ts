@@ -122,11 +122,23 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
       if (locResult.rows.length > 0) location = locResult.rows[0];
     }
 
+    // Check if this conversation has been added to canon for any participant
+    let is_canon = false;
+    for (const p of participants.rows) {
+      const charHistory = await query('SELECT history FROM characters WHERE id = $1', [p.character_id]);
+      const history = charHistory.rows[0]?.history || [];
+      if (history.some((h: any) => h.conversationId === req.params.id && h.source === 'canon_chat')) {
+        is_canon = true;
+        break;
+      }
+    }
+
     res.json({
       success: true,
       data: {
         ...conv.rows[0],
         location,
+        is_canon,
         participants: participants.rows,
       },
     });
