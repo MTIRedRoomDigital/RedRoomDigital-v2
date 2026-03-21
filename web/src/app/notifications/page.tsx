@@ -39,6 +39,10 @@ const typeIcons: Record<string, string> = {
   campaign_ended: '🏁',
   campaign_approved: '📜',
   campaign_rejected: '❌',
+  ai_chat_started: '🤖',
+  takeover_request: '🎮',
+  takeover_accepted: '✅',
+  takeover_declined: '❌',
   system: '📢',
 };
 
@@ -124,6 +128,14 @@ export default function NotificationsPage() {
       case 'campaign_rejected':
         if (n.data?.campaignId) {
           router.push(`/campaigns/${n.data.campaignId}`);
+        }
+        break;
+      case 'ai_chat_started':
+      case 'takeover_request':
+      case 'takeover_accepted':
+      case 'takeover_declined':
+        if (n.data?.conversationId) {
+          router.push(`/chats/${n.data.conversationId}`);
         }
         break;
       default:

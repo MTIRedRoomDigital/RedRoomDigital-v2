@@ -38,6 +38,7 @@ interface ConversationData {
   location: { id: string; name: string; description: string | null; type: string | null } | null;
   chat_mode: 'ai' | 'live' | 'ai_fallback';
   is_canon: boolean;
+  takeover_requested_by: string | null;
   participants: Participant[];
 }
 
@@ -60,6 +61,10 @@ export default function ChatRoomPage() {
   const [ending, setEnding] = useState(false);
   const [requestingCanon, setRequestingCanon] = useState(false);
   const [canonRequestSent, setCanonRequestSent] = useState(false);
+  const [takeoverRequesting, setTakeoverRequesting] = useState(false);
+  const [takeoverRequestSent, setTakeoverRequestSent] = useState(false);
+  const [takeoverPrompt, setTakeoverPrompt] = useState<{ characterName: string } | null>(null);
+  const [respondingToTakeover, setRespondingToTakeover] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,6 +76,12 @@ export default function ChatRoomPage() {
 
   // Can this user take over from AI? (User B sees this when their character is AI-controlled in ai_fallback)
   const canTakeOver = conversation?.chat_mode === 'ai_fallback' && myParticipant?.is_ai_controlled;
+
+  // Is this user the character owner in a pure AI chat? (They can REQUEST to take over)
+  const isCharOwnerInAIChat = conversation?.chat_mode === 'ai' && myParticipant?.is_ai_controlled;
+
+  // Is there a pending takeover request aimed at this user? (User A sees the prompt)
+  const hasPendingTakeoverForMe = conversation?.takeover_requested_by && conversation.takeover_requested_by !== user?.id;
 
   // Is this an AI-powered chat? (used to show thinking indicator)
   const isAIChat = (conversation?.chat_mode === 'ai' || conversation?.chat_mode === 'ai_fallback') && !canTakeOver;
@@ -103,6 +114,20 @@ export default function ChatRoomPage() {
       const msgRes = await api.get<{ messages: Message[] }>(`/api/conversations/${id}/messages`);
       if (msgRes.success && msgRes.data) {
         setMessages((msgRes.data as any).messages || []);
+      }
+
+      // Check if there's a pending takeover request for this user
+      const convData = convRes.data as any;
+      if (convData.takeover_requested_by && convData.takeover_requested_by !== user.id) {
+        // Find the character name of the requester
+        const requesterParticipant = (convData.participants || []).find(
+          (p: any) => p.user_id === convData.takeover_requested_by
+        );
+        if (requesterParticipant) {
+          setTakeoverPrompt({ characterName: requesterParticipant.character_name });
+        }
+      } else if (convData.takeover_requested_by === user.id) {
+        setTakeoverRequestSent(true);
       }
 
       setLoading(false);
@@ -177,6 +202,29 @@ export default function ChatRoomPage() {
       }
     });
 
+    // Listen for takeover request (User A sees this prompt)
+    socket.on('takeover_requested', (data: { conversationId: string; characterName: string }) => {
+      if (data.conversationId === id) {
+        setTakeoverPrompt({ characterName: data.characterName });
+      }
+    });
+
+    // Listen for takeover accepted (both users see the transition)
+    socket.on('takeover_accepted', (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        setTakeoverPrompt(null);
+        setTakeoverRequestSent(false);
+      }
+    });
+
+    // Listen for takeover declined (character owner sees this)
+    socket.on('takeover_declined', (data: { conversationId: string }) => {
+      if (data.conversationId === id) {
+        setTakeoverRequestSent(false);
+        setTakeoverPrompt(null);
+      }
+    });
+
     return () => {
       socket.emit('leave_conversation', id);
       socket.off('new_message');
@@ -184,6 +232,9 @@ export default function ChatRoomPage() {
       socket.off('user_stop_typing');
       socket.off('chat_mode_changed');
       socket.off('conversation_ended');
+      socket.off('takeover_requested');
+      socket.off('takeover_accepted');
+      socket.off('takeover_declined');
     };
   }, [user, id, conversation]);
 
@@ -308,6 +359,39 @@ export default function ChatRoomPage() {
     }
 
     setRequestingCanon(false);
+  };
+
+  // Request to take over from AI (character owner clicks this)
+  const handleRequestTakeover = async () => {
+    if (takeoverRequesting) return;
+    setTakeoverRequesting(true);
+
+    const res = await api.post(`/api/conversations/${id}/request-takeover`, {});
+    if (res.success) {
+      setTakeoverRequestSent(true);
+    } else {
+      alert((res as any).message || 'Failed to send takeover request');
+    }
+
+    setTakeoverRequesting(false);
+  };
+
+  // Respond to takeover request (User A accepts or declines)
+  const handleRespondTakeover = async (accept: boolean) => {
+    if (respondingToTakeover) return;
+    setRespondingToTakeover(true);
+
+    const res = await api.post(`/api/conversations/${id}/respond-takeover`, { accept });
+    if (res.success) {
+      setTakeoverPrompt(null);
+      if (accept) {
+        // The socket 'chat_mode_changed' event will handle the UI update
+      }
+    } else {
+      alert((res as any).message || 'Failed to respond');
+    }
+
+    setRespondingToTakeover(false);
   };
 
   // Handle typing indicator
@@ -474,6 +558,72 @@ export default function ChatRoomPage() {
         </div>
       )}
 
+      {/* AI Chat — Character Owner Can Request Takeover */}
+      {isCharOwnerInAIChat && conversation.is_active && (
+        <div className="px-4 py-3 bg-purple-900/20 border-b border-purple-800/50 shrink-0">
+          <div className="max-w-3xl mx-auto flex items-center justify-between">
+            {takeoverRequestSent ? (
+              <div>
+                <p className="text-sm text-purple-400 font-medium">⏳ Takeover request sent</p>
+                <p className="text-xs text-slate-400">Waiting for the other user to accept...</p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm text-purple-400 font-medium">
+                    Someone is chatting with your character via AI
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    You can request to take over and chat live as {myParticipant?.character_name}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRequestTakeover}
+                  disabled={takeoverRequesting}
+                  className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white rounded-lg transition-colors shrink-0 ml-4 font-semibold"
+                >
+                  {takeoverRequesting ? 'Requesting...' : '🎮 Request Takeover'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Takeover Request Prompt — shown to User A when character owner wants to go live */}
+      {takeoverPrompt && conversation?.is_active && (
+        <div className="px-4 py-3 bg-green-900/20 border-b border-green-800/50 shrink-0 animate-pulse">
+          <div className="max-w-3xl mx-auto">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-green-400 font-medium">
+                  🎮 {takeoverPrompt.characterName}&apos;s owner wants to take over!
+                </p>
+                <p className="text-xs text-slate-400">
+                  They want to chat with you live instead of through AI. Do you accept?
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0 ml-4">
+                <button
+                  onClick={() => handleRespondTakeover(false)}
+                  disabled={respondingToTakeover}
+                  className="px-3 py-1.5 text-sm text-slate-400 hover:text-white border border-slate-600 rounded-lg transition-colors"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => handleRespondTakeover(true)}
+                  disabled={respondingToTakeover}
+                  className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-semibold"
+                >
+                  {respondingToTakeover ? '...' : '✅ Accept'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-3xl mx-auto space-y-4">
@@ -490,6 +640,17 @@ export default function ChatRoomPage() {
           {/* Messages */}
           {messages.map((msg) => {
             const isMe = msg.sender_user_id === user?.id;
+
+            // System messages (e.g., takeover notifications)
+            if (msg.sender_type === 'system') {
+              return (
+                <div key={msg.id} className="text-center py-2">
+                  <p className="text-xs text-slate-400 bg-slate-800/50 inline-block px-4 py-1.5 rounded-full border border-slate-700">
+                    {msg.content}
+                  </p>
+                </div>
+              );
+            }
 
             return (
               <div

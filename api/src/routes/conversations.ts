@@ -321,8 +321,22 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
         },
         io: req.app.get('io'),
       });
+    } else if (mode === 'ai') {
+      // Pure AI chat — notify the character owner that someone is chatting with their character
+      await createNotification({
+        userId: partnerChar.rows[0].owner_id,
+        type: 'ai_chat_started',
+        title: 'Someone is chatting with your character!',
+        body: `${myChar.rows[0].name} started an AI chat with ${partnerChar.rows[0].name}. You can take over anytime!`,
+        data: {
+          conversationId: conv.rows[0].id,
+          fromCharacterName: myChar.rows[0].name,
+          toCharacterName: partnerChar.rows[0].name,
+          chatMode: 'ai',
+        },
+        io: req.app.get('io'),
+      });
     }
-    // mode === 'ai' → no notification sent
 
     res.status(201).json({ success: true, data: conv.rows[0] });
   } catch (error: any) {
@@ -878,6 +892,239 @@ conversationRouter.post('/:id/takeover', authenticate, async (req: AuthRequest, 
     res.json({ success: true, data: { chat_mode: 'live' } });
   } catch (error: any) {
     console.error('Takeover error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/request-takeover
+ * Character owner requests to take over from AI in a pure 'ai' mode conversation.
+ * This sends a real-time prompt to the user who started the AI chat.
+ * Both users must agree before the chat transitions to 'live'.
+ *
+ * FLOW:
+ * 1. User A starts an AI chat with User B's character (chat_mode = 'ai')
+ * 2. User B (character owner) sees the chat in their notifications or chats list
+ * 3. User B clicks "Request to Take Over" → this endpoint is called
+ * 4. User A gets a real-time socket event asking if they want to go live
+ * 5. User A accepts or declines via /respond-takeover
+ */
+conversationRouter.post('/:id/request-takeover', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+
+    // 1. Get conversation details
+    const conv = await query(
+      'SELECT id, chat_mode, is_active FROM conversations WHERE id = $1',
+      [conversationId]
+    );
+
+    if (conv.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+
+    if (!conv.rows[0].is_active) {
+      res.status(400).json({ success: false, message: 'This conversation has ended' });
+      return;
+    }
+
+    if (conv.rows[0].chat_mode !== 'ai') {
+      res.status(400).json({ success: false, message: 'This conversation is not in AI mode' });
+      return;
+    }
+
+    // 2. Verify this user owns the AI-controlled character in this conversation
+    const aiParticipant = await query(
+      `SELECT cp.id, cp.character_id, c.name AS character_name
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND cp.is_ai_controlled = true AND c.creator_id = $2`,
+      [conversationId, userId]
+    );
+
+    if (aiParticipant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You don\'t own the AI character in this conversation' });
+      return;
+    }
+
+    // 3. Get the other participant (User A — the one chatting with the AI)
+    const otherParticipant = await query(
+      `SELECT cp.user_id, c.name AS character_name
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+      [conversationId, userId]
+    );
+
+    if (otherParticipant.rows.length === 0) {
+      res.status(400).json({ success: false, message: 'No other participant found' });
+      return;
+    }
+
+    // 4. Store the pending takeover request on the conversation
+    await query(
+      'UPDATE conversations SET takeover_requested_by = $1, takeover_requested_at = NOW() WHERE id = $2',
+      [userId, conversationId]
+    );
+
+    // 5. Send real-time socket event to the chat room
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`conversation:${conversationId}`).emit('takeover_requested', {
+        conversationId,
+        requestedBy: userId,
+        characterName: aiParticipant.rows[0].character_name,
+        message: `${aiParticipant.rows[0].character_name}'s owner wants to take over from the AI and chat live. Do you accept?`,
+      });
+    }
+
+    // 6. Also send a notification to User A
+    await createNotification({
+      userId: otherParticipant.rows[0].user_id,
+      type: 'takeover_request',
+      title: 'Live Takeover Request',
+      body: `The owner of ${aiParticipant.rows[0].character_name} wants to take over from the AI and chat with you live!`,
+      data: {
+        conversationId,
+        characterName: aiParticipant.rows[0].character_name,
+      },
+      io,
+    });
+
+    res.json({ success: true, message: 'Takeover request sent' });
+  } catch (error: any) {
+    console.error('Request takeover error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/respond-takeover
+ * User A accepts or declines the takeover request from User B (character owner).
+ * Body: { accept: boolean }
+ */
+conversationRouter.post('/:id/respond-takeover', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+    const { accept } = req.body;
+
+    // 1. Verify user is a participant (and NOT the one who requested)
+    const participant = await query(
+      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+
+    if (participant.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You are not in this conversation' });
+      return;
+    }
+
+    // 2. Verify there's a pending takeover request
+    const conv = await query(
+      'SELECT chat_mode, takeover_requested_by FROM conversations WHERE id = $1',
+      [conversationId]
+    );
+
+    if (!conv.rows[0]?.takeover_requested_by) {
+      res.status(400).json({ success: false, message: 'No pending takeover request' });
+      return;
+    }
+
+    if (conv.rows[0].takeover_requested_by === userId) {
+      res.status(400).json({ success: false, message: 'You cannot respond to your own request' });
+      return;
+    }
+
+    const io = req.app.get('io');
+
+    if (accept) {
+      // 3a. Accept: transition to live mode
+      await query(
+        'UPDATE conversations SET chat_mode = $1, takeover_requested_by = NULL, takeover_requested_at = NULL WHERE id = $2',
+        ['live', conversationId]
+      );
+
+      // Update the AI participant to no longer be AI-controlled
+      await query(
+        'UPDATE conversation_participants SET is_ai_controlled = false WHERE conversation_id = $1 AND user_id = $2',
+        [conversationId, conv.rows[0].takeover_requested_by]
+      );
+
+      // Also set the user_id on the participant row to the character owner
+      // (In AI mode, the partner participant may not have a proper user_id)
+
+      // Emit socket event
+      if (io) {
+        io.to(`conversation:${conversationId}`).emit('takeover_accepted', {
+          conversationId,
+          newMode: 'live',
+        });
+        io.to(`conversation:${conversationId}`).emit('chat_mode_changed', {
+          conversationId,
+          newMode: 'live',
+        });
+      }
+
+      // Notify the character owner that their request was accepted
+      await createNotification({
+        userId: conv.rows[0].takeover_requested_by,
+        type: 'takeover_accepted',
+        title: 'Takeover Accepted!',
+        body: 'Your request to take over from the AI was accepted. The chat is now live!',
+        data: { conversationId },
+        io,
+      });
+
+      // Add a system message to the chat
+      await query(
+        `INSERT INTO messages (conversation_id, sender_type, content, sender_name)
+         VALUES ($1, 'system', '🎮 The character owner has taken over from the AI. This chat is now live!', 'System')`,
+        [conversationId]
+      );
+
+      // Emit the system message via socket
+      if (io) {
+        const sysMsg = await query(
+          'SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1',
+          [conversationId]
+        );
+        if (sysMsg.rows[0]) {
+          io.to(`conversation:${conversationId}`).emit('new_message', sysMsg.rows[0]);
+        }
+      }
+
+      res.json({ success: true, data: { chat_mode: 'live', accepted: true } });
+    } else {
+      // 3b. Decline: clear the request, keep AI mode
+      await query(
+        'UPDATE conversations SET takeover_requested_by = NULL, takeover_requested_at = NULL WHERE id = $1',
+        [conversationId]
+      );
+
+      // Emit socket event
+      if (io) {
+        io.to(`conversation:${conversationId}`).emit('takeover_declined', {
+          conversationId,
+        });
+      }
+
+      // Notify the character owner
+      await createNotification({
+        userId: conv.rows[0].takeover_requested_by,
+        type: 'takeover_declined',
+        title: 'Takeover Declined',
+        body: 'The other user declined your request to take over from the AI.',
+        data: { conversationId },
+        io,
+      });
+
+      res.json({ success: true, data: { accepted: false } });
+    }
+  } catch (error: any) {
+    console.error('Respond takeover error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
