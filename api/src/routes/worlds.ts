@@ -241,7 +241,7 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
       }
     }
 
-    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode } = req.body;
 
     const result = await query(
       `UPDATE worlds SET
@@ -252,10 +252,11 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
         setting = COALESCE($5, setting),
         is_public = COALESCE($6, is_public),
         banner_url = COALESCE($7, banner_url),
-        thumbnail_url = COALESCE($8, thumbnail_url)
-       WHERE id = $9
+        thumbnail_url = COALESCE($8, thumbnail_url),
+        join_mode = COALESCE($9, join_mode)
+       WHERE id = $10
        RETURNING *`,
-      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, is_public, banner_url, thumbnail_url, worldId]
+      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, is_public, banner_url, thumbnail_url, join_mode, worldId]
     );
 
     res.json({ success: true, data: result.rows[0] });

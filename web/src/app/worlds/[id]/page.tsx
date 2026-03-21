@@ -267,13 +267,20 @@ export default function WorldDetailPage() {
     );
   }
 
-  const tabs = [
+  // For locked worlds, non-members can only see Overview and Members
+  const isLockedAndNotMember = world.join_mode === 'locked' && !isMember && !isCreator;
+
+  const allTabs = [
     { key: 'overview', label: 'Overview' },
     { key: 'characters', label: `Characters (${world.character_count})` },
     { key: 'members', label: `Members (${world.members?.length || world.member_count})` },
     { key: 'locations', label: `Locations (${world.locations?.length || 0})` },
     { key: 'campaigns', label: `Campaigns (${world.campaigns?.length || 0})` },
   ] as const;
+
+  const tabs = isLockedAndNotMember
+    ? allTabs.filter((t) => t.key === 'overview' || t.key === 'members')
+    : allTabs;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -328,12 +335,20 @@ export default function WorldDetailPage() {
         {/* Action Buttons */}
         <div className="shrink-0 flex flex-col gap-2">
           {isCreator || isWorldMaster ? (
-            <button
-              onClick={() => router.push(`/worlds/${world.id}/edit`)}
-              className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
-            >
-              Edit World
-            </button>
+            <>
+              <button
+                onClick={() => router.push(`/worlds/${world.id}/edit`)}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+              >
+                Edit World
+              </button>
+              <button
+                onClick={openCharPicker}
+                className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
+              >
+                Add Character
+              </button>
+            </>
           ) : isMember ? (
             <>
               <button
@@ -367,12 +382,15 @@ export default function WorldDetailPage() {
                   )}
                 </button>
               )}
-              <button
-                onClick={openCharPicker}
-                className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
-              >
-                Add Character
-              </button>
+              {/* Only show Add Character for open worlds or if already a member */}
+              {world.join_mode !== 'locked' && (
+                <button
+                  onClick={openCharPicker}
+                  className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
+                >
+                  Add Character
+                </button>
+              )}
             </>
           ) : (
             <Link
@@ -504,7 +522,7 @@ export default function WorldDetailPage() {
         </div>
       )}
 
-      {activeTab === 'characters' && (
+      {activeTab === 'characters' && !isLockedAndNotMember && (
         <div>
           {world.characters.length === 0 ? (
             <div className="text-center py-12">
@@ -585,7 +603,7 @@ export default function WorldDetailPage() {
         </div>
       )}
 
-      {activeTab === 'locations' && (
+      {activeTab === 'locations' && !isLockedAndNotMember && (
         <div>
           {/* Add Location button for WorldMasters */}
           {(isCreator || isWorldMaster) && (
@@ -706,7 +724,7 @@ export default function WorldDetailPage() {
         </div>
       )}
 
-      {activeTab === 'campaigns' && (
+      {activeTab === 'campaigns' && !isLockedAndNotMember && (
         <div>
           {/* Create Campaign button for WorldMasters */}
           {(isCreator || isWorldMaster) && (
