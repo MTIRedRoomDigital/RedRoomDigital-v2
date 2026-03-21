@@ -21,6 +21,7 @@ interface WorldData {
   } | null;
   setting: string | null;
   is_public: boolean;
+  join_mode: 'open' | 'locked';
   max_characters: number;
   member_count: number;
   character_count: number;
@@ -110,15 +111,27 @@ export default function WorldDetailPage() {
   const isMember = user && world?.members?.some((m) => m.user_id === user.id);
   const isWorldMaster = user && world?.members?.some((m) => m.user_id === user.id && m.is_worldmaster);
 
+  const [joinRequestPending, setJoinRequestPending] = useState(false);
+
   const handleJoin = async () => {
     if (!user || !world) return;
     setJoining(true);
-    const res = await api.post(`/api/worlds/${world.id}/join`, {});
+    const res = await api.post<any>(`/api/worlds/${world.id}/join`, {});
     if (res.success) {
-      // Refresh world data
-      const updated = await api.get<WorldData>(`/api/worlds/${world.id}`);
-      if (updated.success && updated.data) {
-        setWorld(updated.data as any);
+      if ((res.data as any)?.pending || (res as any).pending) {
+        // Locked world — request sent
+        setJoinRequestPending(true);
+      } else {
+        // Open world — joined immediately, refresh
+        const updated = await api.get<WorldData>(`/api/worlds/${world.id}`);
+        if (updated.success && updated.data) {
+          setWorld(updated.data as any);
+        }
+      }
+    } else {
+      const msg = (res as any).message;
+      if (msg?.includes('pending')) {
+        setJoinRequestPending(true);
       }
     }
     setJoining(false);
@@ -291,6 +304,9 @@ export default function WorldDetailPage() {
             {!world.is_public && (
               <span className="text-xs px-2 py-0.5 bg-slate-700 text-slate-400 rounded-full">Private</span>
             )}
+            {world.join_mode === 'locked' && (
+              <span className="text-xs px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded-full border border-amber-800/50">🔒 Locked</span>
+            )}
           </div>
 
           {world.setting && (
@@ -336,13 +352,21 @@ export default function WorldDetailPage() {
             </>
           ) : user ? (
             <>
-              <button
-                onClick={handleJoin}
-                disabled={joining}
-                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-50"
-              >
-                {joining ? 'Joining...' : 'Join World'}
-              </button>
+              {joinRequestPending ? (
+                <span className="px-4 py-2 text-sm bg-slate-700 text-amber-400 rounded-lg border border-amber-800/50">
+                  ⏳ Join request pending
+                </span>
+              ) : (
+                <button
+                  onClick={handleJoin}
+                  disabled={joining}
+                  className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {joining ? (world?.join_mode === 'locked' ? 'Requesting...' : 'Joining...') : (
+                    world?.join_mode === 'locked' ? '🔒 Request to Join' : 'Join World'
+                  )}
+                </button>
+              )}
               <button
                 onClick={openCharPicker}
                 className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"

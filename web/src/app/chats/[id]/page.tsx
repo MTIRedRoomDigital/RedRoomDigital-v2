@@ -748,32 +748,43 @@ export default function ChatRoomPage() {
 
       {/* Message Input or Ended Banner */}
       {conversation.is_active ? (
-        <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">
-          <div className="max-w-3xl mx-auto flex gap-3 items-end">
-            <div className="flex-1">
-              <textarea
-                ref={inputRef}
-                value={newMessage}
-                onChange={(e) => {
-                  setNewMessage(e.target.value);
-                  handleTyping();
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder={`Write as ${myParticipant?.character_name || 'your character'}...`}
-                rows={1}
-                className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none max-h-32"
-                style={{ minHeight: '44px' }}
-              />
+        isCharOwnerInAIChat ? (
+          /* Character owner can't send messages until takeover is accepted */
+          <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">
+            <div className="max-w-3xl mx-auto text-center">
+              <p className="text-sm text-slate-500">
+                🤖 AI is chatting as {myParticipant?.character_name}. Request a takeover above to chat live.
+              </p>
             </div>
-            <button
-              onClick={handleSend}
-              disabled={!newMessage.trim() || sending}
-              className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors shrink-0"
-            >
-              Send
-            </button>
           </div>
-        </div>
+        ) : (
+          <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">
+            <div className="max-w-3xl mx-auto flex gap-3 items-end">
+              <div className="flex-1">
+                <textarea
+                  ref={inputRef}
+                  value={newMessage}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    handleTyping();
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={`Write as ${myParticipant?.character_name || 'your character'}...`}
+                  rows={1}
+                  className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 resize-none max-h-32"
+                  style={{ minHeight: '44px' }}
+                />
+              </div>
+              <button
+                onClick={handleSend}
+                disabled={!newMessage.trim() || sending}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors shrink-0"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )
       ) : (
         <div className="px-4 py-4 bg-slate-800 border-t border-slate-700 shrink-0">
           <div className="max-w-3xl mx-auto text-center space-y-2">

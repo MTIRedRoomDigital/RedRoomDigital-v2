@@ -43,6 +43,10 @@ const typeIcons: Record<string, string> = {
   takeover_request: '🎮',
   takeover_accepted: '✅',
   takeover_declined: '❌',
+  world_join_request: '🌍',
+  world_join_accepted: '✅',
+  world_join_rejected: '❌',
+  world_removed: '🚫',
   system: '📢',
 };
 
@@ -79,6 +83,7 @@ export default function NotificationsPage() {
   const handleNotificationClick = async (n: Notification) => {
     // Don't navigate for actionable request notifications — they have inline buttons
     if (n.type === 'world_character_request' && !n.is_read) return;
+    if (n.type === 'world_join_request' && !n.is_read) return;
     if (n.type === 'canon_request' && !n.is_read) return;
     if (n.type === 'canon_removal_request' && !n.is_read) return;
 
@@ -138,6 +143,14 @@ export default function NotificationsPage() {
           router.push(`/chats/${n.data.conversationId}`);
         }
         break;
+      case 'world_join_request':
+      case 'world_join_accepted':
+      case 'world_join_rejected':
+      case 'world_removed':
+        if (n.data?.worldId) {
+          router.push(`/worlds/${n.data.worldId}`);
+        }
+        break;
       default:
         break;
     }
@@ -147,6 +160,19 @@ export default function NotificationsPage() {
     setResponding(n.id);
     const res = await api.post(`/api/worlds/${n.data.worldId}/character-request/respond`, {
       character_id: n.data.characterId,
+      notification_id: n.id,
+      action,
+    });
+    if (res.success) {
+      setNotifications((prev) => prev.map((notif) => (notif.id === n.id ? { ...notif, is_read: true } : notif)));
+    }
+    setResponding(null);
+  };
+
+  const handleJoinRequest = async (n: Notification, action: 'accept' | 'reject') => {
+    setResponding(n.id);
+    const res = await api.post(`/api/worlds/${n.data.worldId}/join-request/respond`, {
+      user_id: n.data.fromUserId,
       notification_id: n.id,
       action,
     });
@@ -277,6 +303,25 @@ export default function NotificationsPage() {
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCharacterRequest(n, 'reject'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                  {/* Accept/Reject buttons for world join requests */}
+                  {n.type === 'world_join_request' && !n.is_read && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleJoinRequest(n, 'accept'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                      >
+                        {responding === n.id ? '...' : 'Accept'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleJoinRequest(n, 'reject'); }}
                         disabled={responding === n.id}
                         className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
                       >

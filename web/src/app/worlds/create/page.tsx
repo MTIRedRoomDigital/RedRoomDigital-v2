@@ -24,6 +24,7 @@ export default function CreateWorldPage() {
   const [techLevel, setTechLevel] = useState('');
   const [customRules, setCustomRules] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [joinMode, setJoinMode] = useState<'open' | 'locked'>('open');
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
 
@@ -56,6 +57,7 @@ export default function CreateWorldPage() {
       lore: lore.trim() || null,
       rules: Object.keys(rules).length > 0 ? rules : null,
       is_public: isPublic,
+      join_mode: joinMode,
       banner_url: bannerUrl,
       thumbnail_url: thumbnailUrl,
     });
@@ -310,6 +312,26 @@ export default function CreateWorldPage() {
                 <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
               </label>
             </div>
+
+            {isPublic && (
+              <div className="flex items-center justify-between p-4 bg-slate-800 border border-slate-700 rounded-lg">
+                <div>
+                  <h4 className="text-white font-medium">🔒 Locked World</h4>
+                  <p className="text-sm text-slate-400 mt-0.5">
+                    Users must request permission to join. You approve or deny each request.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={joinMode === 'locked'}
+                    onChange={(e) => setJoinMode(e.target.checked ? 'locked' : 'open')}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500" />
+                </label>
+              </div>
+            )}
 
             {/* Summary card */}
             <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg">

@@ -175,7 +175,7 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
       return;
     }
 
-    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode } = req.body;
 
     if (!name) {
       res.status(400).json({ success: false, message: 'World name is required' });
@@ -183,10 +183,10 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
     }
 
     const result = await query(
-      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, banner_url, thumbnail_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [userId, name, description, lore, JSON.stringify(rules || {}), setting, is_public !== false, banner_url || null, thumbnail_url || null]
+      [userId, name, description, lore, JSON.stringify(rules || {}), setting, is_public !== false, banner_url || null, thumbnail_url || null, join_mode || 'open']
     );
 
     // Auto-add creator as WorldMaster
@@ -292,7 +292,9 @@ worldRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response)
 
 /**
  * POST /api/worlds/:id/join
- * Join a public world
+ * Join a world. Behavior depends on join_mode:
+ * - 'open': Anyone can join immediately
+ * - 'locked': Sends a join request to the WorldMaster for approval
  */
 worldRouter.post('/:id/join', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -301,7 +303,7 @@ worldRouter.post('/:id/join', authenticate, async (req: AuthRequest, res: Respon
 
     // Check world exists and is public
     const worldResult = await query(
-      'SELECT id, is_public, max_characters, member_count FROM worlds WHERE id = $1',
+      'SELECT id, name, is_public, max_characters, member_count, join_mode, creator_id FROM worlds WHERE id = $1',
       [worldId]
     );
 
@@ -326,21 +328,192 @@ worldRouter.post('/:id/join', authenticate, async (req: AuthRequest, res: Respon
       return;
     }
 
-    // Join
-    await query(
-      'INSERT INTO world_members (world_id, user_id) VALUES ($1, $2)',
-      [worldId, userId]
-    );
+    const joinMode = worldResult.rows[0].join_mode || 'open';
 
-    // Update member count
-    await query(
-      'UPDATE worlds SET member_count = member_count + 1 WHERE id = $1',
-      [worldId]
-    );
+    if (joinMode === 'locked') {
+      // Check for existing pending join request
+      const existingReq = await query(
+        `SELECT id FROM notifications
+         WHERE user_id = $1 AND type = 'world_join_request' AND is_read = false
+         AND data->>'worldId' = $2 AND data->>'fromUserId' = $3
+         LIMIT 1`,
+        [worldResult.rows[0].creator_id, worldId, userId]
+      );
 
-    res.json({ success: true, message: 'Joined world successfully' });
+      if (existingReq.rows.length > 0) {
+        res.status(400).json({ success: false, message: 'Your join request is already pending' });
+        return;
+      }
+
+      // Send join request to world owner
+      await createNotification({
+        userId: worldResult.rows[0].creator_id,
+        type: 'world_join_request',
+        title: 'World Join Request',
+        body: `${req.user!.username} wants to join ${worldResult.rows[0].name}`,
+        data: {
+          worldId,
+          worldName: worldResult.rows[0].name,
+          fromUserId: userId,
+          fromUsername: req.user!.username,
+        },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'Join request sent to the WorldMaster', pending: true });
+    } else {
+      // Open world — join immediately
+      await query(
+        'INSERT INTO world_members (world_id, user_id) VALUES ($1, $2)',
+        [worldId, userId]
+      );
+
+      await query(
+        'UPDATE worlds SET member_count = member_count + 1 WHERE id = $1',
+        [worldId]
+      );
+
+      res.json({ success: true, message: 'Joined world successfully' });
+    }
   } catch (error: any) {
     console.error('Join world error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/worlds/:id/join-request/respond
+ * WorldMaster accepts or rejects a join request.
+ * Body: { user_id: string, notification_id: string, action: 'accept' | 'reject' }
+ */
+worldRouter.post('/:id/join-request/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id;
+    const { user_id: requestUserId, notification_id, action } = req.body;
+
+    if (!requestUserId || !notification_id || !['accept', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, message: 'user_id, notification_id, and action are required' });
+      return;
+    }
+
+    // Verify requester is world owner or WorldMaster
+    const worldResult = await query('SELECT creator_id, name FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    const isCreator = worldResult.rows[0].creator_id === userId;
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, userId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only WorldMasters can respond to join requests' });
+        return;
+      }
+    }
+
+    // Mark notification as read
+    await query('UPDATE notifications SET is_read = true WHERE id = $1', [notification_id]);
+
+    if (action === 'accept') {
+      // Check if already a member (in case of duplicate)
+      const existing = await query(
+        'SELECT id FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, requestUserId]
+      );
+
+      if (existing.rows.length === 0) {
+        await query('INSERT INTO world_members (world_id, user_id) VALUES ($1, $2)', [worldId, requestUserId]);
+        await query('UPDATE worlds SET member_count = member_count + 1 WHERE id = $1', [worldId]);
+      }
+
+      await createNotification({
+        userId: requestUserId,
+        type: 'world_join_accepted',
+        title: 'Join Request Accepted!',
+        body: `You've been accepted into ${worldResult.rows[0].name}!`,
+        data: { worldId, worldName: worldResult.rows[0].name },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'User accepted' });
+    } else {
+      await createNotification({
+        userId: requestUserId,
+        type: 'world_join_rejected',
+        title: 'Join Request Declined',
+        body: `Your request to join ${worldResult.rows[0].name} was declined.`,
+        data: { worldId, worldName: worldResult.rows[0].name },
+        io: req.app.get('io'),
+      });
+
+      res.json({ success: true, message: 'User rejected' });
+    }
+  } catch (error: any) {
+    console.error('Join request respond error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * DELETE /api/worlds/:id/members/:userId
+ * WorldMaster removes a character/member from the world
+ */
+worldRouter.delete('/:id/members/:userId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = req.user!.id;
+    const worldId = req.params.id;
+    const targetUserId = req.params.userId;
+
+    // Verify requester is world owner or WorldMaster
+    const worldResult = await query('SELECT creator_id, name FROM worlds WHERE id = $1', [worldId]);
+    if (worldResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    // Can't remove the world creator
+    if (targetUserId === worldResult.rows[0].creator_id) {
+      res.status(400).json({ success: false, message: 'Cannot remove the world creator' });
+      return;
+    }
+
+    const isCreator = worldResult.rows[0].creator_id === currentUserId;
+    if (!isCreator) {
+      const wmResult = await query(
+        'SELECT is_worldmaster FROM world_members WHERE world_id = $1 AND user_id = $2',
+        [worldId, currentUserId]
+      );
+      if (!wmResult.rows[0]?.is_worldmaster) {
+        res.status(403).json({ success: false, message: 'Only WorldMasters can remove members' });
+        return;
+      }
+    }
+
+    // Remove member
+    await query('DELETE FROM world_members WHERE world_id = $1 AND user_id = $2', [worldId, targetUserId]);
+    await query('UPDATE worlds SET member_count = GREATEST(member_count - 1, 0) WHERE id = $1', [worldId]);
+
+    // Remove their characters from this world
+    await query('UPDATE characters SET world_id = NULL WHERE world_id = $1 AND creator_id = $2', [worldId, targetUserId]);
+
+    // Notify the removed user
+    await createNotification({
+      userId: targetUserId,
+      type: 'world_removed',
+      title: 'Removed from World',
+      body: `You have been removed from ${worldResult.rows[0].name}`,
+      data: { worldId, worldName: worldResult.rows[0].name },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: 'Member removed' });
+  } catch (error: any) {
+    console.error('Remove member error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
