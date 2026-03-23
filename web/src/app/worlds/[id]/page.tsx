@@ -96,16 +96,47 @@ export default function WorldDetailPage() {
   const [newCampMax, setNewCampMax] = useState(6);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
 
+  // Vote state
+  const [userVote, setUserVote] = useState<1 | -1 | null>(null);
+  const [likeCount, setLikeCount] = useState(0);
+  const [dislikeCount, setDislikeCount] = useState(0);
+  const [voting, setVoting] = useState(false);
+
   useEffect(() => {
     if (!id) return;
 
     api.get<WorldData>(`/api/worlds/${id}`).then((res) => {
       if (res.success && res.data) {
         setWorld(res.data as any);
+        setLikeCount((res.data as any).like_count || 0);
+        setDislikeCount((res.data as any).dislike_count || 0);
       }
       setLoading(false);
     });
   }, [id]);
+
+  // Fetch user's existing vote on this world
+  useEffect(() => {
+    if (!user || !id) return;
+    api.get<{ user_vote: 1 | -1 | null }>(`/api/worlds/${id}/vote`).then((res) => {
+      if (res.success && res.data) setUserVote((res.data as any).user_vote);
+    });
+  }, [user, id]);
+
+  const handleWorldVote = async (vote: 1 | -1) => {
+    if (!user || voting) return;
+    setVoting(true);
+    const res = await api.post<{ like_count: number; dislike_count: number; user_vote: 1 | -1 | null }>(
+      `/api/worlds/${id}/vote`, { vote }
+    );
+    if (res.success && res.data) {
+      const d = res.data as any;
+      setLikeCount(d.like_count);
+      setDislikeCount(d.dislike_count);
+      setUserVote(d.user_vote);
+    }
+    setVoting(false);
+  };
 
   const isCreator = user && world && user.id === world.creator_id;
   const isMember = user && world?.members?.some((m) => m.user_id === user.id);
@@ -402,6 +433,40 @@ export default function WorldDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Like / Dislike */}
+      {user && !isCreator && (
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={() => handleWorldVote(1)}
+            disabled={voting}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              userVote === 1
+                ? 'bg-green-600/20 text-green-400 border border-green-600'
+                : 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:text-green-400 hover:border-green-600/50'
+            }`}
+          >
+            👍 {likeCount}
+          </button>
+          <button
+            onClick={() => handleWorldVote(-1)}
+            disabled={voting}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              userVote === -1
+                ? 'bg-red-600/20 text-red-400 border border-red-600'
+                : 'bg-slate-700/50 text-slate-400 border border-slate-600 hover:text-red-400 hover:border-red-600/50'
+            }`}
+          >
+            👎 {dislikeCount}
+          </button>
+        </div>
+      )}
+      {(!user || isCreator) && (likeCount > 0 || dislikeCount > 0) && (
+        <div className="flex items-center gap-3 mb-4 text-sm text-slate-500">
+          <span>👍 {likeCount}</span>
+          <span>👎 {dislikeCount}</span>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">

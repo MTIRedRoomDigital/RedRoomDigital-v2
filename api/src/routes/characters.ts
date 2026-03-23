@@ -30,7 +30,7 @@ characterRouter.get('/', async (req: Request, res: Response) => {
 
     const result = await query(
       `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count, c.rating,
-              c.world_id, c.created_at,
+              c.world_id, c.created_at, c.like_count, c.dislike_count,
               u.id AS creator_id, u.username AS creator_name,
               w.name AS world_name
        FROM characters c
@@ -240,6 +240,108 @@ characterRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Respo
     }
 
     res.json({ success: true, message: 'Character deleted' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/characters/:id/vote
+ * Like (1) or dislike (-1) a character. Sending the same vote again removes it.
+ * Body: { vote: 1 | -1 }
+ */
+characterRouter.post('/:id/vote', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const characterId = req.params.id;
+    const { vote } = req.body;
+
+    if (vote !== 1 && vote !== -1) {
+      res.status(400).json({ success: false, message: 'Vote must be 1 (like) or -1 (dislike)' });
+      return;
+    }
+
+    // Check character exists
+    const char = await query('SELECT id, creator_id FROM characters WHERE id = $1', [characterId]);
+    if (char.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+
+    // Can't vote on your own character
+    if (char.rows[0].creator_id === userId) {
+      res.status(400).json({ success: false, message: 'You cannot vote on your own character' });
+      return;
+    }
+
+    // Check existing vote
+    const existing = await query(
+      'SELECT id, vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [userId, 'character', characterId]
+    );
+
+    if (existing.rows.length > 0) {
+      if (existing.rows[0].vote === vote) {
+        // Same vote again — remove it (toggle off)
+        await query('DELETE FROM votes WHERE id = $1', [existing.rows[0].id]);
+      } else {
+        // Change vote
+        await query('UPDATE votes SET vote = $1 WHERE id = $2', [vote, existing.rows[0].id]);
+      }
+    } else {
+      // New vote
+      await query(
+        'INSERT INTO votes (user_id, target_type, target_id, vote) VALUES ($1, $2, $3, $4)',
+        [userId, 'character', characterId, vote]
+      );
+    }
+
+    // Recount
+    const likes = await query(
+      "SELECT COUNT(*) FROM votes WHERE target_type = 'character' AND target_id = $1 AND vote = 1",
+      [characterId]
+    );
+    const dislikes = await query(
+      "SELECT COUNT(*) FROM votes WHERE target_type = 'character' AND target_id = $1 AND vote = -1",
+      [characterId]
+    );
+
+    await query(
+      'UPDATE characters SET like_count = $1, dislike_count = $2 WHERE id = $3',
+      [parseInt(likes.rows[0].count), parseInt(dislikes.rows[0].count), characterId]
+    );
+
+    // Return the user's current vote
+    const currentVote = await query(
+      'SELECT vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [userId, 'character', characterId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        like_count: parseInt(likes.rows[0].count),
+        dislike_count: parseInt(dislikes.rows[0].count),
+        user_vote: currentVote.rows[0]?.vote || null,
+      },
+    });
+  } catch (error: any) {
+    console.error('Vote error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/characters/:id/vote
+ * Get the current user's vote on a character (if any)
+ */
+characterRouter.get('/:id/vote', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [req.user!.id, 'character', req.params.id]
+    );
+    res.json({ success: true, data: { user_vote: result.rows[0]?.vote || null } });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Server error' });
   }

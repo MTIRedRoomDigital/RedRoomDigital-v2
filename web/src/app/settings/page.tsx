@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [blockedUsers, setBlockedUsers] = useState<{ id: string; blocked_id: string; username: string; avatar_url: string | null }[]>([]);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -29,6 +31,10 @@ export default function SettingsPage() {
       setUsername(user.username || '');
       setBio((user as any).bio || '');
       setAvatarUrl((user as any).avatar_url || null);
+      // Load blocked users
+      api.get<any[]>('/api/users/blocked').then((res) => {
+        if (res.success && res.data) setBlockedUsers(res.data as any);
+      });
     }
   }, [user, authLoading, router]);
 
@@ -231,6 +237,38 @@ export default function SettingsPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Blocked Users */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">🚫 Blocked Users</h2>
+        {blockedUsers.length === 0 ? (
+          <p className="text-sm text-slate-500">No blocked users</p>
+        ) : (
+          <div className="space-y-3">
+            {blockedUsers.map((blocked) => (
+              <div key={blocked.id} className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg">
+                <Link href={`/users/${blocked.blocked_id}`} className="flex items-center gap-3 text-sm text-white hover:text-red-400 transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-sm font-bold">
+                    {blocked.username?.[0]?.toUpperCase() || '?'}
+                  </div>
+                  {blocked.username}
+                </Link>
+                <button
+                  onClick={async () => {
+                    const res = await api.delete(`/api/users/${blocked.blocked_id}/block`);
+                    if (res.success) {
+                      setBlockedUsers((prev) => prev.filter((b) => b.id !== blocked.id));
+                    }
+                  }}
+                  className="text-xs px-3 py-1 border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

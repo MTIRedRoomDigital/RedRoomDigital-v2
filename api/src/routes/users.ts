@@ -230,3 +230,129 @@ userRouter.get('/characters', authenticate, async (req: AuthRequest, res: Respon
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+// ==================== BLOCK SYSTEM ====================
+
+/**
+ * POST /api/users/:id/block
+ * Block a user. Prevents them from chatting with you or viewing your characters.
+ */
+userRouter.post('/:id/block', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const blockerId = req.user!.id;
+    const blockedId = req.params.id;
+
+    if (blockerId === blockedId) {
+      res.status(400).json({ success: false, message: 'You cannot block yourself' });
+      return;
+    }
+
+    // Check user exists
+    const userExists = await query('SELECT id FROM users WHERE id = $1', [blockedId]);
+    if (userExists.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
+    }
+
+    // Check if already blocked
+    const existing = await query(
+      'SELECT id FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
+      [blockerId, blockedId]
+    );
+
+    if (existing.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'User is already blocked' });
+      return;
+    }
+
+    await query(
+      'INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2)',
+      [blockerId, blockedId]
+    );
+
+    // Also remove any existing friendship
+    await query(
+      'DELETE FROM friendships WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)',
+      [blockerId, blockedId]
+    );
+
+    res.json({ success: true, message: 'User blocked' });
+  } catch (error: any) {
+    console.error('Block error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * DELETE /api/users/:id/block
+ * Unblock a user.
+ */
+userRouter.delete('/:id/block', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const blockerId = req.user!.id;
+    const blockedId = req.params.id;
+
+    await query(
+      'DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
+      [blockerId, blockedId]
+    );
+
+    res.json({ success: true, message: 'User unblocked' });
+  } catch (error: any) {
+    console.error('Unblock error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/users/blocked
+ * Get list of users the current user has blocked.
+ */
+userRouter.get('/blocked', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT ub.id, ub.blocked_id, ub.created_at,
+              u.username, u.avatar_url
+       FROM user_blocks ub
+       JOIN users u ON ub.blocked_id = u.id
+       WHERE ub.blocker_id = $1
+       ORDER BY ub.created_at DESC`,
+      [req.user!.id]
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/users/:id/block-status
+ * Check if a user is blocked by or has blocked the current user.
+ */
+userRouter.get('/:id/block-status', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const otherId = req.params.id;
+
+    const blocked = await query(
+      'SELECT id FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
+      [userId, otherId]
+    );
+
+    const blockedBy = await query(
+      'SELECT id FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
+      [otherId, userId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        is_blocked: blocked.rows.length > 0,
+        is_blocked_by: blockedBy.rows.length > 0,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});

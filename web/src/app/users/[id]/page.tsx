@@ -33,6 +33,9 @@ export default function UserProfilePage() {
   const [friendStatus, setFriendStatus] = useState<FriendStatus>({ status: 'none' });
   const [loading, setLoading] = useState(true);
   const [friendLoading, setFriendLoading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [isBlockedBy, setIsBlockedBy] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
 
   const isOwnProfile = user?.id === id;
 
@@ -44,10 +47,16 @@ export default function UserProfilePage() {
       setLoading(false);
     });
 
-    // Check friendship status if logged in
+    // Check friendship status and block status if logged in
     if (user && !isOwnProfile) {
       api.get<FriendStatus>(`/api/friends/status/${id}`).then((res) => {
         if (res.success && res.data) setFriendStatus(res.data as any);
+      });
+      api.get<{ is_blocked: boolean; is_blocked_by: boolean }>(`/api/users/${id}/block-status`).then((res) => {
+        if (res.success && res.data) {
+          setIsBlocked((res.data as any).is_blocked);
+          setIsBlockedBy((res.data as any).is_blocked_by);
+        }
       });
     }
   }, [id, user, isOwnProfile]);
@@ -71,6 +80,28 @@ export default function UserProfilePage() {
     }
 
     setFriendLoading(false);
+  };
+
+  const handleBlock = async () => {
+    if (!user || blockLoading) return;
+    setBlockLoading(true);
+
+    if (isBlocked) {
+      const res = await api.delete(`/api/users/${id}/block`);
+      if (res.success) setIsBlocked(false);
+    } else {
+      if (!confirm(`Are you sure you want to block ${profile?.username}? This will also remove any friendship.`)) {
+        setBlockLoading(false);
+        return;
+      }
+      const res = await api.post(`/api/users/${id}/block`, {});
+      if (res.success) {
+        setIsBlocked(true);
+        setFriendStatus({ status: 'none' });
+      }
+    }
+
+    setBlockLoading(false);
   };
 
   const friendButtonLabel = () => {
@@ -146,15 +177,35 @@ export default function UserProfilePage() {
           </p>
         </div>
 
-        {/* Friend Button */}
+        {/* Friend + Block Buttons */}
         {user && !isOwnProfile && (
-          <button
-            onClick={handleFriendAction}
-            disabled={friendLoading}
-            className={`px-4 py-2 text-sm rounded-lg transition-colors disabled:opacity-50 shrink-0 ${friendButtonStyle()}`}
-          >
-            {friendLoading ? '...' : friendButtonLabel()}
-          </button>
+          <div className="flex flex-col gap-2 shrink-0">
+            {!isBlocked && !isBlockedBy && (
+              <button
+                onClick={handleFriendAction}
+                disabled={friendLoading}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors disabled:opacity-50 ${friendButtonStyle()}`}
+              >
+                {friendLoading ? '...' : friendButtonLabel()}
+              </button>
+            )}
+            {isBlockedBy && (
+              <span className="px-4 py-2 text-sm text-slate-500 border border-slate-700 rounded-lg">
+                Unable to interact
+              </span>
+            )}
+            <button
+              onClick={handleBlock}
+              disabled={blockLoading}
+              className={`px-4 py-2 text-xs rounded-lg transition-colors disabled:opacity-50 ${
+                isBlocked
+                  ? 'border border-red-600 text-red-400 hover:bg-red-900/20'
+                  : 'border border-slate-600 text-slate-500 hover:text-red-400 hover:border-red-600/50'
+              }`}
+            >
+              {blockLoading ? '...' : isBlocked ? '🚫 Unblock' : '🚫 Block'}
+            </button>
+          </div>
         )}
         {isOwnProfile && (
           <Link href="/profile" className="px-4 py-2 text-sm border border-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors shrink-0">

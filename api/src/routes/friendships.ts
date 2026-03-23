@@ -73,6 +73,16 @@ router.post('/request/:userId', authenticate, async (req: AuthRequest, res: Resp
       return;
     }
 
+    // Check if either user has blocked the other
+    const blockCheck = await query(
+      'SELECT id FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)',
+      [myId, targetId]
+    );
+    if (blockCheck.rows.length > 0) {
+      res.status(403).json({ success: false, message: 'Unable to send friend request' });
+      return;
+    }
+
     // Check existing friendship
     const existing = await query(
       `SELECT id, status FROM friendships

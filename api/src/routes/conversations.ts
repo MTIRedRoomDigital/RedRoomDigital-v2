@@ -220,6 +220,16 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
       return;
     }
 
+    // Check if either user has blocked the other
+    const blockCheck = await query(
+      'SELECT id FROM user_blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)',
+      [req.user!.id, partnerChar.rows[0].owner_id]
+    );
+    if (blockCheck.rows.length > 0) {
+      res.status(403).json({ success: false, message: 'Unable to start a conversation with this character' });
+      return;
+    }
+
     // Determine chat mode and AI control settings
     const mode = chat_mode || 'live'; // 'ai' | 'live' | 'ai_fallback'
 

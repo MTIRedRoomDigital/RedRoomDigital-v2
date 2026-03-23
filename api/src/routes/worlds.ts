@@ -941,3 +941,97 @@ worldRouter.delete('/:id/locations/:locationId', authenticate, async (req: AuthR
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+/**
+ * POST /api/worlds/:id/vote
+ * Like (1) or dislike (-1) a world. Same vote again removes it.
+ * Body: { vote: 1 | -1 }
+ */
+worldRouter.post('/:id/vote', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id;
+    const { vote } = req.body;
+
+    if (vote !== 1 && vote !== -1) {
+      res.status(400).json({ success: false, message: 'Vote must be 1 (like) or -1 (dislike)' });
+      return;
+    }
+
+    const world = await query('SELECT id, creator_id FROM worlds WHERE id = $1', [worldId]);
+    if (world.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+
+    if (world.rows[0].creator_id === userId) {
+      res.status(400).json({ success: false, message: 'You cannot vote on your own world' });
+      return;
+    }
+
+    const existing = await query(
+      'SELECT id, vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [userId, 'world', worldId]
+    );
+
+    if (existing.rows.length > 0) {
+      if (existing.rows[0].vote === vote) {
+        await query('DELETE FROM votes WHERE id = $1', [existing.rows[0].id]);
+      } else {
+        await query('UPDATE votes SET vote = $1 WHERE id = $2', [vote, existing.rows[0].id]);
+      }
+    } else {
+      await query(
+        'INSERT INTO votes (user_id, target_type, target_id, vote) VALUES ($1, $2, $3, $4)',
+        [userId, 'world', worldId, vote]
+      );
+    }
+
+    const likes = await query(
+      "SELECT COUNT(*) FROM votes WHERE target_type = 'world' AND target_id = $1 AND vote = 1",
+      [worldId]
+    );
+    const dislikes = await query(
+      "SELECT COUNT(*) FROM votes WHERE target_type = 'world' AND target_id = $1 AND vote = -1",
+      [worldId]
+    );
+
+    await query(
+      'UPDATE worlds SET like_count = $1, dislike_count = $2 WHERE id = $3',
+      [parseInt(likes.rows[0].count), parseInt(dislikes.rows[0].count), worldId]
+    );
+
+    const currentVote = await query(
+      'SELECT vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [userId, 'world', worldId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        like_count: parseInt(likes.rows[0].count),
+        dislike_count: parseInt(dislikes.rows[0].count),
+        user_vote: currentVote.rows[0]?.vote || null,
+      },
+    });
+  } catch (error: any) {
+    console.error('World vote error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * GET /api/worlds/:id/vote
+ * Get the current user's vote on a world
+ */
+worldRouter.get('/:id/vote', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      'SELECT vote FROM votes WHERE user_id = $1 AND target_type = $2 AND target_id = $3',
+      [req.user!.id, 'world', req.params.id]
+    );
+    res.json({ success: true, data: { user_vote: result.rows[0]?.vote || null } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
