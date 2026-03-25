@@ -468,7 +468,7 @@ worldRouter.delete('/:id/members/:userId', authenticate, async (req: AuthRequest
   try {
     const currentUserId = req.user!.id;
     const worldId = req.params.id;
-    const targetUserId = req.params.userId;
+    const targetUserId = req.params.userId as string;
 
     // Verify requester is world owner or WorldMaster
     const worldResult = await query('SELECT creator_id, name FROM worlds WHERE id = $1', [worldId]);
