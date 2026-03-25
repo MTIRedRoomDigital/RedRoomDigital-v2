@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { Dashboard } from '@/components/Dashboard';
 
 interface FeaturedCharacter {
   id: string;
@@ -32,6 +33,11 @@ export default function Home() {
       if (res.success && res.data) setStats(res.data as any);
     });
   }, []);
+
+  // Logged-in users see the dashboard hub
+  if (user) {
+    return <Dashboard />;
+  }
 
   return (
     <div className="min-h-screen">
@@ -70,37 +76,18 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            {user ? (
-              <>
-                <Link
-                  href="/characters/create"
-                  className="px-8 py-3.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:shadow-red-500/40 hover:-translate-y-0.5"
-                >
-                  Create a Character
-                </Link>
-                <Link
-                  href="/explore"
-                  className="px-8 py-3.5 border border-slate-600 hover:border-slate-400 text-slate-300 hover:text-white font-semibold rounded-xl transition-all hover:-translate-y-0.5"
-                >
-                  Explore Characters
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link
-                  href="/register"
-                  className="px-8 py-3.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:shadow-red-500/40 hover:-translate-y-0.5"
-                >
-                  Get Started Free
-                </Link>
-                <Link
-                  href="/explore"
-                  className="px-8 py-3.5 border border-slate-600 hover:border-slate-400 text-slate-300 hover:text-white font-semibold rounded-xl transition-all hover:-translate-y-0.5"
-                >
-                  Explore Characters
-                </Link>
-              </>
-            )}
+            <Link
+              href="/register"
+              className="px-8 py-3.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:shadow-red-500/40 hover:-translate-y-0.5"
+            >
+              Get Started Free
+            </Link>
+            <Link
+              href="/explore"
+              className="px-8 py-3.5 border border-slate-600 hover:border-slate-400 text-slate-300 hover:text-white font-semibold rounded-xl transition-all hover:-translate-y-0.5"
+            >
+              Explore Characters
+            </Link>
           </div>
 
           {/* Stats bar */}
@@ -267,24 +254,22 @@ export default function Home() {
       </section>
 
       {/* CTA Section */}
-      {!user && (
-        <section className="py-20 border-t border-slate-800">
-          <div className="max-w-3xl mx-auto px-4 text-center">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Ready to Create Your First Character?
-            </h2>
-            <p className="text-slate-400 mb-8">
-              Join the community. It&apos;s free to start &mdash; no credit card required.
-            </p>
-            <Link
-              href="/register"
-              className="inline-block px-10 py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:shadow-red-500/40 hover:-translate-y-0.5 text-lg"
-            >
-              Sign Up Free
-            </Link>
-          </div>
-        </section>
-      )}
+      <section className="py-20 border-t border-slate-800">
+        <div className="max-w-3xl mx-auto px-4 text-center">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            Ready to Create Your First Character?
+          </h2>
+          <p className="text-slate-400 mb-8">
+            Join the community. It&apos;s free to start &mdash; no credit card required.
+          </p>
+          <Link
+            href="/register"
+            className="inline-block px-10 py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:shadow-red-500/40 hover:-translate-y-0.5 text-lg"
+          >
+            Sign Up Free
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }

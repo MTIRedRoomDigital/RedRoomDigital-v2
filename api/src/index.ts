@@ -21,6 +21,7 @@ import { forumRouter } from './routes/forum';
 import { notificationRouter } from './routes/notifications';
 import { friendshipRouter } from './routes/friendships';
 import { uploadRouter } from './routes/upload';
+import { dashboardRouter } from './routes/dashboard';
 import { setupSocket } from './socket';
 import { pool } from './db/pool';
 
@@ -76,6 +77,7 @@ app.use('/api/forum', forumRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/friends', friendshipRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 // Socket.IO
 setupSocket(io);
