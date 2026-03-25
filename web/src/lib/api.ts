@@ -44,8 +44,6 @@ class ApiClient {
       headers,
     });
 
-    const data = await response.json();
-
     // If unauthorized, clear token and redirect
     if (response.status === 401) {
       localStorage.removeItem('rrd_token');
@@ -54,7 +52,12 @@ class ApiClient {
       }
     }
 
-    return data;
+    try {
+      const data = await response.json();
+      return data;
+    } catch {
+      return { success: false, message: `Server error (${response.status})` };
+    }
   }
 
   // Convenience methods

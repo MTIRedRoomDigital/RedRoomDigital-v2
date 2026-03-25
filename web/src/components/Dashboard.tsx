@@ -101,6 +101,9 @@ export function Dashboard() {
   useEffect(() => {
     api.get<DashboardData>('/api/dashboard').then((res) => {
       if (res.success && res.data) setData(res.data as any);
+    }).catch(() => {
+      // API may not be reachable
+    }).finally(() => {
       setLoading(false);
     });
   }, []);
@@ -120,7 +123,16 @@ export function Dashboard() {
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 py-20 text-center">
+        <p className="text-slate-400 mb-4">Unable to load dashboard data.</p>
+        <button onClick={() => window.location.reload()} className="text-sm text-red-400 hover:text-red-300">
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
