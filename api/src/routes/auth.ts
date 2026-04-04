@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../lib/email';
 
 export const authRouter = Router();
 
@@ -40,11 +42,11 @@ authRouter.post('/register', async (req: Request, res: Response) => {
     // The "12" is the salt rounds - higher = more secure but slower
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create user
+    // Create user (email_verified defaults to false)
     const result = await query(
-      `INSERT INTO users (username, email, password_hash)
-       VALUES ($1, $2, $3)
-       RETURNING id, username, email, role, subscription, avatar_url, created_at`,
+      `INSERT INTO users (username, email, password_hash, email_verified)
+       VALUES ($1, $2, $3, false)
+       RETURNING id, username, email, role, subscription, avatar_url, created_at, email_verified`,
       [username, email.toLowerCase(), passwordHash]
     );
 
@@ -56,6 +58,19 @@ authRouter.post('/register', async (req: Request, res: Response) => {
       process.env.JWT_SECRET || 'fallback-secret',
       { expiresIn: 604800 }
     );
+
+    // Send verification email (don't block registration if email fails)
+    try {
+      const verifyToken = crypto.randomBytes(32).toString('hex');
+      await query(
+        `INSERT INTO email_verification_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+        [user.id, verifyToken]
+      );
+      await sendVerificationEmail(email.toLowerCase(), verifyToken);
+    } catch (emailErr: any) {
+      console.error('Verification email failed:', emailErr.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -176,6 +191,165 @@ authRouter.get('/stats', async (_req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PASSWORD RESET
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/auth/forgot-password
+ * Request a password reset email
+ */
+authRouter.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Email is required' });
+      return;
+    }
+
+    // Always return success to prevent email enumeration attacks
+    const user = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (user.rows.length === 0) {
+      res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+      return;
+    }
+
+    // Invalidate any existing tokens for this user
+    await query('UPDATE password_reset_tokens SET used = true WHERE user_id = $1 AND used = false', [user.rows[0].id]);
+
+    // Create new token (expires in 1 hour)
+    const token = crypto.randomBytes(32).toString('hex');
+    await query(
+      `INSERT INTO password_reset_tokens (user_id, token, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+      [user.rows[0].id, token]
+    );
+
+    await sendPasswordResetEmail(email.toLowerCase(), token);
+    res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+  } catch (error: any) {
+    console.error('Forgot password error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Set a new password using a reset token
+ */
+authRouter.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      res.status(400).json({ success: false, message: 'Token and password are required' });
+      return;
+    }
+    if (password.length < 6) {
+      res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    // Find valid token
+    const result = await query(
+      `SELECT * FROM password_reset_tokens
+       WHERE token = $1 AND used = false AND expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(400).json({ success: false, message: 'Invalid or expired reset link. Please request a new one.' });
+      return;
+    }
+
+    const resetToken = result.rows[0];
+
+    // Update password
+    const passwordHash = await bcrypt.hash(password, 12);
+    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, resetToken.user_id]);
+
+    // Mark token as used
+    await query('UPDATE password_reset_tokens SET used = true WHERE id = $1', [resetToken.id]);
+
+    res.json({ success: true, message: 'Password has been reset. You can now log in.' });
+  } catch (error: any) {
+    console.error('Reset password error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// EMAIL VERIFICATION
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/auth/verify-email
+ * Verify email address using token from email link
+ */
+authRouter.post('/verify-email', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      res.status(400).json({ success: false, message: 'Token is required' });
+      return;
+    }
+
+    const result = await query(
+      `SELECT * FROM email_verification_tokens
+       WHERE token = $1 AND expires_at > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      res.status(400).json({ success: false, message: 'Invalid or expired verification link.' });
+      return;
+    }
+
+    const verifyToken = result.rows[0];
+
+    // Mark user as verified
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [verifyToken.user_id]);
+
+    // Delete used token
+    await query('DELETE FROM email_verification_tokens WHERE id = $1', [verifyToken.id]);
+
+    res.json({ success: true, message: 'Email verified successfully!' });
+  } catch (error: any) {
+    console.error('Verify email error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/auth/resend-verification
+ * Resend verification email (requires auth)
+ */
+authRouter.post('/resend-verification', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await query('SELECT id, email, email_verified FROM users WHERE id = $1', [req.user!.id]);
+    if (user.rows[0].email_verified) {
+      res.json({ success: true, message: 'Email is already verified.' });
+      return;
+    }
+
+    // Delete old tokens
+    await query('DELETE FROM email_verification_tokens WHERE user_id = $1', [req.user!.id]);
+
+    // Create new token
+    const token = crypto.randomBytes(32).toString('hex');
+    await query(
+      `INSERT INTO email_verification_tokens (user_id, token, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '24 hours')`,
+      [req.user!.id, token]
+    );
+
+    await sendVerificationEmail(user.rows[0].email, token);
+    res.json({ success: true, message: 'Verification email sent.' });
+  } catch (error: any) {
+    console.error('Resend verification error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
