@@ -27,6 +27,7 @@ import { setupSocket } from './socket';
 import { pool } from './db/pool';
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Railway/Vercel) — needed for rate limiting + real IP
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 4000;
 

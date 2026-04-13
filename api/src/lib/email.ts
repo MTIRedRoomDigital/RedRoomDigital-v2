@@ -1,30 +1,16 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
 /**
- * Email sender using Resend SMTP
+ * Email sender using Resend HTTP API
+ * (SMTP is blocked by many cloud hosts like Railway — HTTP API works everywhere)
  *
  * Required env vars:
- *   SMTP_HOST     — smtp.resend.com
- *   SMTP_PORT     — 465 (SSL) or 587 (STARTTLS)
- *   SMTP_USER     — resend
- *   SMTP_PASS     — your Resend API key (re_...)
- *   SMTP_FROM     — "RedRoomDigital <support@redroomdigital.com>"
+ *   RESEND_API_KEY  — your Resend API key (re_...)
+ *   SMTP_FROM       — "RedRoomDigital <support@redroomdigital.com>"
+ *   FRONTEND_URL    — "https://redroomdigital.com"
  */
 
-const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.resend.com',
-  port: smtpPort,
-  secure: smtpPort === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 10000, // 10s to connect
-  socketTimeout: 10000,     // 10s for socket inactivity
-});
-
+const resend = new Resend(process.env.RESEND_API_KEY || process.env.SMTP_PASS);
 const FROM = process.env.SMTP_FROM || 'RedRoomDigital <support@redroomdigital.com>';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -32,7 +18,7 @@ export async function sendPasswordResetEmail(to: string, token: string) {
   const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
 
   try {
-    await transporter.sendMail({
+    const { error } = await resend.emails.send({
       from: FROM,
       to,
       subject: 'Reset your RedRoomDigital password',
@@ -50,10 +36,15 @@ export async function sendPasswordResetEmail(to: string, token: string) {
         </div>
       `,
     });
+
+    if (error) {
+      console.error('Resend error (password reset):', error);
+      throw new Error(error.message);
+    }
     console.log(`Password reset email sent to ${to}`);
-  } catch (error: any) {
-    console.error('Failed to send password reset email:', error.message);
-    throw error;
+  } catch (err: any) {
+    console.error('Failed to send password reset email:', err.message);
+    throw err;
   }
 }
 
@@ -61,7 +52,7 @@ export async function sendVerificationEmail(to: string, token: string) {
   const verifyUrl = `${FRONTEND_URL}/verify-email?token=${token}`;
 
   try {
-    await transporter.sendMail({
+    const { error } = await resend.emails.send({
       from: FROM,
       to,
       subject: 'Verify your RedRoomDigital email',
@@ -78,9 +69,14 @@ export async function sendVerificationEmail(to: string, token: string) {
         </div>
       `,
     });
+
+    if (error) {
+      console.error('Resend error (verification):', error);
+      throw new Error(error.message);
+    }
     console.log(`Verification email sent to ${to}`);
-  } catch (error: any) {
-    console.error('Failed to send verification email:', error.message);
-    throw error;
+  } catch (err: any) {
+    console.error('Failed to send verification email:', err.message);
+    throw err;
   }
 }
