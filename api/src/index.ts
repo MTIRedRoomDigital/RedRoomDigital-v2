@@ -54,10 +54,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting — prevents abuse and brute force attacks
-// General: 100 requests per 15 minutes per IP
+// General: 300 requests per 15 minutes per IP (each page can fire 3-5 API calls)
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many requests. Please try again later.' },
@@ -111,11 +111,18 @@ app.use('/api/dashboard', dashboardRouter);
 // Socket.IO
 setupSocket(io);
 
-// Global error handler — ensures CORS headers are included on error responses
+// Global error handler — explicitly sets CORS headers on error responses
 // Without this, unhandled route errors return bare 500s that browsers block as CORS errors
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err.message || err);
   if (!res.headersSent) {
+    // Manually set CORS headers on error responses — the cors() middleware
+    // doesn't always persist headers when Express error handling takes over
+    const origin = req.headers.origin;
+    if (origin && corsOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
     res.status(err.status || 500).json({ success: false, message: 'Internal server error' });
   }
 });
