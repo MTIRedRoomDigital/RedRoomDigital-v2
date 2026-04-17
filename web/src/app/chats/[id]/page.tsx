@@ -38,6 +38,9 @@ interface ConversationData {
   location: { id: string; name: string; description: string | null; type: string | null } | null;
   chat_mode: 'ai' | 'live' | 'ai_fallback';
   is_canon: boolean;
+  is_public: boolean;
+  last_canon_at: string | null;
+  public_requested_by: string | null;
   takeover_requested_by: string | null;
   participants: Participant[];
 }
@@ -61,6 +64,8 @@ export default function ChatRoomPage() {
   const [ending, setEnding] = useState(false);
   const [requestingCanon, setRequestingCanon] = useState(false);
   const [canonRequestSent, setCanonRequestSent] = useState(false);
+  const [requestingPublic, setRequestingPublic] = useState(false);
+  const [publicRequestSent, setPublicRequestSent] = useState(false);
   const [takeoverRequesting, setTakeoverRequesting] = useState(false);
   const [takeoverRequestSent, setTakeoverRequestSent] = useState(false);
   const [takeoverPrompt, setTakeoverPrompt] = useState<{ characterName: string } | null>(null);
@@ -343,7 +348,7 @@ export default function ChatRoomPage() {
     setEnding(false);
   };
 
-  // Request to add conversation to both characters' canon
+  // Request to add conversation to both characters' canon (works mid-chat or after end)
   const handleCanonRequest = async () => {
     if (!myParticipant || requestingCanon) return;
     setRequestingCanon(true);
@@ -353,12 +358,55 @@ export default function ChatRoomPage() {
     });
 
     if (res.success) {
-      setCanonRequestSent(true);
+      if ((res.data as any)?.solo) {
+        // Solo/AI chat — applied directly
+        alert('Canon updated for your character');
+        // Refresh conversation to get updated last_canon_at
+        const refreshed = await api.get<ConversationData>(`/api/conversations/${id}`);
+        if (refreshed.success && refreshed.data) setConversation(refreshed.data as any);
+      } else {
+        setCanonRequestSent(true);
+      }
     } else {
       alert((res as any).message || 'Failed to send canon request');
     }
 
     setRequestingCanon(false);
+  };
+
+  // Request to make this chat public (both users must agree)
+  const handlePublicRequest = async () => {
+    if (requestingPublic) return;
+    if (!confirm('Make this chat visible to the community? The other player will need to agree.')) return;
+    setRequestingPublic(true);
+
+    const res = await api.post(`/api/conversations/${id}/public-request`, {});
+
+    if (res.success) {
+      if ((res.data as any)?.solo) {
+        alert('Conversation is now public');
+        const refreshed = await api.get<ConversationData>(`/api/conversations/${id}`);
+        if (refreshed.success && refreshed.data) setConversation(refreshed.data as any);
+      } else {
+        setPublicRequestSent(true);
+      }
+    } else {
+      alert((res as any).message || 'Failed to send public request');
+    }
+
+    setRequestingPublic(false);
+  };
+
+  // Toggle back to private
+  const handleUnpublish = async () => {
+    if (!confirm('Make this chat private again? It will no longer appear in the public feed.')) return;
+    const res = await api.post(`/api/conversations/${id}/unpublish`, {});
+    if (res.success) {
+      const refreshed = await api.get<ConversationData>(`/api/conversations/${id}`);
+      if (refreshed.success && refreshed.data) setConversation(refreshed.data as any);
+    } else {
+      alert((res as any).message || 'Failed to unpublish');
+    }
   };
 
   // Request to take over from AI (character owner clicks this)
@@ -497,6 +545,16 @@ export default function ChatRoomPage() {
                   📜 Canon
                 </span>
               )}
+              {conversation.last_canon_at && !conversation.is_canon && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/20 text-amber-500/80 border border-amber-800/30" title={`Last canon snapshot: ${new Date(conversation.last_canon_at).toLocaleString()}`}>
+                  ✨ Canon up to snapshot
+                </span>
+              )}
+              {conversation.is_public && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-900/30 text-blue-400 border border-blue-800/50">
+                  🌐 Public
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500">
               Chatting as <span className="text-slate-400">{myParticipant?.character_name}</span>
@@ -513,6 +571,49 @@ export default function ChatRoomPage() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Canon Snapshot — available any time there are new messages since last snapshot */}
+            {myParticipant && messages.length >= 2 && !canonRequestSent && (
+              <button
+                onClick={handleCanonRequest}
+                disabled={requestingCanon}
+                className="text-xs px-3 py-1.5 text-amber-400 hover:text-amber-300 hover:bg-amber-900/20 border border-amber-800/40 hover:border-amber-700/60 rounded-lg transition-colors disabled:opacity-50"
+                title="Mark everything up to this point as canon — both players must agree"
+              >
+                {requestingCanon ? '✨ Requesting...' : conversation.last_canon_at ? '✨ New Canon Snapshot' : '✨ Canon Snapshot'}
+              </button>
+            )}
+            {canonRequestSent && (
+              <span className="text-[11px] px-2 py-1 rounded-lg bg-amber-900/20 text-amber-400 border border-amber-800/40">
+                ⏳ Canon request sent
+              </span>
+            )}
+
+            {/* Make Public / Unpublish */}
+            {myParticipant && (
+              conversation.is_public ? (
+                <button
+                  onClick={handleUnpublish}
+                  className="text-xs px-3 py-1.5 text-slate-400 hover:text-blue-300 hover:bg-blue-900/20 border border-slate-700 hover:border-blue-800/50 rounded-lg transition-colors"
+                  title="Make this chat private"
+                >
+                  🔒 Unpublish
+                </button>
+              ) : !publicRequestSent && !conversation.public_requested_by ? (
+                <button
+                  onClick={handlePublicRequest}
+                  disabled={requestingPublic}
+                  className="text-xs px-3 py-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 border border-blue-800/40 hover:border-blue-700/60 rounded-lg transition-colors disabled:opacity-50"
+                  title="Let the community view this chat (other player must agree)"
+                >
+                  {requestingPublic ? '🌐 Requesting...' : '🌐 Make Public'}
+                </button>
+              ) : (
+                <span className="text-[11px] px-2 py-1 rounded-lg bg-blue-900/20 text-blue-400 border border-blue-800/40">
+                  ⏳ Public request pending
+                </span>
+              )
+            )}
+
             {/* End Chat button — only when active */}
             {conversation.is_active && (
               <button

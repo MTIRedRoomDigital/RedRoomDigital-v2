@@ -26,6 +26,9 @@ interface Character {
   tags: string[];
   chat_count: number;
   rating: number;
+  contradiction_score: number;
+  contradictions: { severity: 'minor' | 'moderate' | 'severe'; description: string; evidence: string[] }[];
+  contradictions_updated_at: string | null;
   created_at: string;
   relationships: {
     id: string;
@@ -69,6 +72,7 @@ export default function CharacterDetailPage() {
   const [likeCount, setLikeCount] = useState(0);
   const [dislikeCount, setDislikeCount] = useState(0);
   const [voting, setVoting] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -273,12 +277,35 @@ export default function CharacterDetailPage() {
             <p className="text-slate-300 mt-1 mb-3">{character.description}</p>
           )}
 
-          <div className="flex items-center gap-4 text-sm text-slate-400">
+          <div className="flex items-center gap-4 text-sm text-slate-400 flex-wrap">
             <span>Created by <Link href={`/users/${character.creator_id}`} className="font-bold text-slate-300 hover:text-red-400 transition-colors">{character.creator_name}</Link></span>
             <span>•</span>
             <span>{character.chat_count} chats</span>
             <span>•</span>
             <span>{new Date(character.created_at).toLocaleDateString()}</span>
+            {/* Contradiction score badge */}
+            {character.contradictions_updated_at && (
+              <>
+                <span>•</span>
+                {character.contradiction_score === 0 ? (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-800/50" title="AI has found no contradictions in this character's canon">
+                    ✓ Consistent (0)
+                  </span>
+                ) : character.contradiction_score <= 2 ? (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400 border border-yellow-800/50" title="Minor contradictions detected">
+                    ⚠ Minor ({character.contradiction_score})
+                  </span>
+                ) : character.contradiction_score <= 6 ? (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/30 text-orange-400 border border-orange-800/50" title="Several contradictions detected">
+                    ⚠ Inconsistent ({character.contradiction_score})
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-red-900/30 text-red-400 border border-red-800/50" title="Major contradictions — this character is behaving inconsistently">
+                    ⚠ Highly Inconsistent ({character.contradiction_score})
+                  </span>
+                )}
+              </>
+            )}
           </div>
 
           {/* Like / Dislike */}
@@ -562,6 +589,88 @@ export default function CharacterDetailPage() {
                 });
               })()}
             </div>
+          </div>
+        )}
+
+        {/* Contradiction Analysis — visible to owner always, to others only when contradictions exist */}
+        {(isOwner || (character.contradictions && character.contradictions.length > 0)) && (
+          <div className={`p-5 border rounded-xl md:col-span-2 ${
+            character.contradiction_score === 0
+              ? 'bg-green-900/10 border-green-800/30'
+              : character.contradiction_score <= 2
+              ? 'bg-yellow-900/10 border-yellow-800/30'
+              : character.contradiction_score <= 6
+              ? 'bg-orange-900/10 border-orange-800/30'
+              : 'bg-red-900/10 border-red-800/30'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-white">
+                {character.contradiction_score === 0 ? '✓ Character Consistency' : '⚠ Contradictions Detected'}
+              </h2>
+              {isOwner && (
+                <button
+                  onClick={async () => {
+                    if (reanalyzing) return;
+                    setReanalyzing(true);
+                    const res = await api.post<{ score: number; contradictions: Character['contradictions'] }>(
+                      `/api/conversations/characters/${character.id}/analyze-contradictions`, {}
+                    );
+                    if (res.success && res.data) {
+                      setCharacter({
+                        ...character,
+                        contradiction_score: res.data.score,
+                        contradictions: res.data.contradictions,
+                        contradictions_updated_at: new Date().toISOString(),
+                      });
+                    } else {
+                      alert((res as any).message || 'Failed to analyze contradictions');
+                    }
+                    setReanalyzing(false);
+                  }}
+                  disabled={reanalyzing}
+                  className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 rounded-lg transition-colors"
+                  title="Re-run AI analysis on this character's canon"
+                >
+                  {reanalyzing ? '🔍 Analyzing...' : '🔍 Re-analyze'}
+                </button>
+              )}
+            </div>
+
+            {character.contradictions_updated_at && (
+              <p className="text-xs text-slate-500 mb-3">
+                Last checked: {new Date(character.contradictions_updated_at).toLocaleString()}
+              </p>
+            )}
+
+            {character.contradictions && character.contradictions.length > 0 ? (
+              <ul className="space-y-3">
+                {character.contradictions.map((c, i) => (
+                  <li key={i} className="p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        c.severity === 'severe' ? 'bg-red-900/40 text-red-400' :
+                        c.severity === 'moderate' ? 'bg-orange-900/40 text-orange-400' :
+                        'bg-yellow-900/40 text-yellow-400'
+                      }`}>
+                        {c.severity}
+                      </span>
+                      <p className="text-sm text-slate-200 font-medium">{c.description}</p>
+                    </div>
+                    {c.evidence && c.evidence.length > 0 && (
+                      <ul className="mt-2 pl-4 text-xs text-slate-500 space-y-0.5 list-disc">
+                        {c.evidence.map((e, j) => <li key={j}>{e}</li>)}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-400">
+                {character.contradictions_updated_at
+                  ? 'No contradictions found — this character is internally consistent across all canon events.'
+                  : 'No analysis yet. Add some canon events and click "Re-analyze" to check consistency.'}
+              </p>
+            )}
           </div>
         )}
       </div>

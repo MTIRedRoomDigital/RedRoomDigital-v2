@@ -43,6 +43,9 @@ const typeIcons: Record<string, string> = {
   takeover_request: '🎮',
   takeover_accepted: '✅',
   takeover_declined: '❌',
+  public_chat_request: '🌐',
+  public_chat_accepted: '🌐',
+  public_chat_rejected: '🌐',
   world_join_request: '🌍',
   world_join_accepted: '✅',
   world_join_rejected: '❌',
@@ -86,6 +89,7 @@ export default function NotificationsPage() {
     if (n.type === 'world_join_request' && !n.is_read) return;
     if (n.type === 'canon_request' && !n.is_read) return;
     if (n.type === 'canon_removal_request' && !n.is_read) return;
+    if (n.type === 'public_chat_request' && !n.is_read) return;
 
     // Mark as read first
     if (!n.is_read) await markRead(n.id);
@@ -139,6 +143,13 @@ export default function NotificationsPage() {
       case 'takeover_request':
       case 'takeover_accepted':
       case 'takeover_declined':
+        if (n.data?.conversationId) {
+          router.push(`/chats/${n.data.conversationId}`);
+        }
+        break;
+      case 'public_chat_request':
+      case 'public_chat_accepted':
+      case 'public_chat_rejected':
         if (n.data?.conversationId) {
           router.push(`/chats/${n.data.conversationId}`);
         }
@@ -210,6 +221,20 @@ export default function NotificationsPage() {
     setResponding(null);
   };
 
+  const handlePublicChatRequest = async (n: Notification, action: 'accept' | 'reject') => {
+    setResponding(n.id);
+    const res = await api.post(`/api/conversations/${n.data.conversationId}/public-request/respond`, {
+      notification_id: n.id,
+      action,
+    });
+    if (res.success) {
+      setNotifications((prev) => prev.map((notif) => (notif.id === n.id ? { ...notif, is_read: true } : notif)));
+    } else {
+      alert((res as any).message || 'Something went wrong');
+    }
+    setResponding(null);
+  };
+
   // Check if a notification type has a navigation target
   const isActionable = (n: Notification) => {
     if ((n.type === 'friend_request' || n.type === 'friend_accepted') && n.data?.fromUserId) return true;
@@ -217,6 +242,7 @@ export default function NotificationsPage() {
     if ((n.type === 'world_character_accepted' || n.type === 'world_character_rejected') && n.data?.worldId) return true;
     if (n.type === 'world_character_request' && n.data?.worldId) return true;
     if (['canon_request', 'canon_accepted', 'canon_rejected', 'canon_removal_request', 'canon_removal_accepted', 'canon_removal_rejected'].includes(n.type) && n.data?.conversationId) return true;
+    if (['public_chat_request', 'public_chat_accepted', 'public_chat_rejected'].includes(n.type) && n.data?.conversationId) return true;
     if (['campaign_join', 'campaign_started', 'campaign_turn', 'campaign_ended', 'campaign_approved', 'campaign_rejected'].includes(n.type) && n.data?.campaignId) return true;
     return false;
   };
@@ -341,6 +367,25 @@ export default function NotificationsPage() {
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCanonRequest(n, 'reject'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                  {/* Accept/Reject buttons for public chat requests */}
+                  {n.type === 'public_chat_request' && !n.is_read && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePublicChatRequest(n, 'accept'); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                      >
+                        {responding === n.id ? '🌐 Publishing...' : '🌐 Accept & Make Public'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handlePublicChatRequest(n, 'reject'); }}
                         disabled={responding === n.id}
                         className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
                       >

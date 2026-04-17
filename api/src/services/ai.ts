@@ -278,7 +278,8 @@ export async function generateAIResponse(
  */
 export async function summarizeForCanon(
   characterId: string,
-  conversationId: string
+  conversationId: string,
+  sinceMessageId?: string | null
 ): Promise<{
   events: { event: string; impact: string }[];
   relationships: { characterName: string; characterId: string; type: string; description: string; strengthChange: number }[];
@@ -291,14 +292,16 @@ export async function summarizeForCanon(
   if (charResult.rows.length === 0) throw new Error('Character not found');
   const charName = charResult.rows[0].name;
 
-  // Get all messages in the conversation
+  // Get messages in the conversation (optionally only messages AFTER a given marker)
   const messages = await query(
     `SELECT m.content, m.sender_type, c.name AS sender_name, c.id AS sender_char_id
      FROM messages m
      JOIN characters c ON m.sender_character_id = c.id
      WHERE m.conversation_id = $1
+       AND m.sender_type != 'system'
+       ${sinceMessageId ? 'AND m.created_at > (SELECT created_at FROM messages WHERE id = $2)' : ''}
      ORDER BY m.created_at ASC`,
-    [conversationId]
+    sinceMessageId ? [conversationId, sinceMessageId] : [conversationId]
   );
 
   if (messages.rows.length === 0) {
@@ -364,6 +367,107 @@ Rules:
     console.error('Failed to parse canon summary:', content);
     return { events: [], relationships: [] };
   }
+}
+
+/**
+ * Analyze a character's canon (personality, background, history events) for internal contradictions.
+ * Returns:
+ *   score        — 0 = perfectly consistent; higher numbers = more/worse contradictions
+ *   contradictions — array of detected contradictions with severity + explanation
+ *
+ * Called after canon is added to a character so the score stays fresh.
+ */
+export async function analyzeContradictions(
+  characterId: string
+): Promise<{
+  score: number;
+  contradictions: { severity: 'minor' | 'moderate' | 'severe'; description: string; evidence: string[] }[];
+}> {
+  const charResult = await query(
+    'SELECT name, description, personality, background, likes, dislikes, history FROM characters WHERE id = $1',
+    [characterId]
+  );
+  if (charResult.rows.length === 0) throw new Error('Character not found');
+  const c = charResult.rows[0];
+
+  // If the character has almost no canon, skip — nothing to contradict
+  const historyCount = Array.isArray(c.history) ? c.history.length : 0;
+  if (historyCount < 2 && !c.background && !c.personality?.traits?.length) {
+    return { score: 0, contradictions: [] };
+  }
+
+  const personality = c.personality || {};
+  const historyLines = (c.history || [])
+    .map((h: any, i: number) => `${i + 1}. [${h.date || '?'}] ${h.event} — ${h.impact || ''} (source: ${h.source || 'manual'})`)
+    .join('\n');
+
+  const prompt = `You are a character consistency auditor for a roleplaying platform. Analyze "${c.name}" for internal contradictions across their personality, backstory, and canon history events.
+
+--- CHARACTER PROFILE ---
+Name: ${c.name}
+Description: ${c.description || '(none)'}
+Traits: ${(personality.traits || []).join(', ') || '(none)'}
+Values: ${(personality.values || []).join(', ') || '(none)'}
+Flaws: ${(personality.flaws || []).join(', ') || '(none)'}
+Likes: ${(c.likes || []).join(', ') || '(none)'}
+Dislikes: ${(c.dislikes || []).join(', ') || '(none)'}
+Backstory: ${c.background || '(none)'}
+
+--- CANON HISTORY EVENTS ---
+${historyLines || '(none yet)'}
+
+Identify contradictions — places where the character acted or was described in ways that clash with their established personality, values, flaws, or previous canon events. Examples:
+- A character described as "loyal" betrays their friend with no narrative justification
+- A character who hates violence suddenly enjoys killing
+- Backstory says they grew up poor, but a canon event says they inherited a fortune (contradictory unless reconciled)
+
+Respond with ONLY valid JSON:
+{
+  "contradictions": [
+    {
+      "severity": "minor" | "moderate" | "severe",
+      "description": "One-sentence summary of the contradiction",
+      "evidence": ["Quote or paraphrase from trait/value/flaw", "Quote or paraphrase from conflicting history event"]
+    }
+  ]
+}
+
+Scoring rules (the app will compute the score from severity counts):
+- minor = slight tension, could be reconciled
+- moderate = clear inconsistency that needs addressing
+- severe = the character is acting like two different people
+
+Only flag REAL contradictions. If the character is internally consistent, return { "contradictions": [] }.`;
+
+  const response = await getOpenAI().chat.completions.create({
+    model: AI_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 1000,
+    temperature: 0.2,
+  });
+
+  const content = response.choices[0].message.content || '{"contradictions":[]}';
+  let parsed: { contradictions: { severity: string; description: string; evidence: string[] }[] };
+  try {
+    const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    parsed = JSON.parse(cleaned);
+  } catch {
+    console.error('Failed to parse contradiction analysis:', content);
+    return { score: 0, contradictions: [] };
+  }
+
+  // Compute weighted score: minor=1, moderate=3, severe=6
+  const weights: Record<string, number> = { minor: 1, moderate: 3, severe: 6 };
+  const score = (parsed.contradictions || []).reduce((sum, c) => sum + (weights[c.severity] || 1), 0);
+
+  return {
+    score,
+    contradictions: (parsed.contradictions || []).map((c) => ({
+      severity: (['minor', 'moderate', 'severe'].includes(c.severity) ? c.severity : 'minor') as 'minor' | 'moderate' | 'severe',
+      description: c.description,
+      evidence: Array.isArray(c.evidence) ? c.evidence : [],
+    })),
+  };
 }
 
 /**

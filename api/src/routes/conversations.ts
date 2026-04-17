@@ -1,7 +1,23 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { generateAIResponse, summarizeForCanon } from '../services/ai';
+import { generateAIResponse, summarizeForCanon, analyzeContradictions } from '../services/ai';
+
+/**
+ * Helper: Re-analyze a character for contradictions and persist the score.
+ * Fire-and-forget: called after canon is applied so the next chat has a fresh consistency signal.
+ */
+async function analyzeCharacterContradictions(characterId: string) {
+  const { score, contradictions } = await analyzeContradictions(characterId);
+  await query(
+    `UPDATE characters
+       SET contradiction_score = $1,
+           contradictions = $2::jsonb,
+           contradictions_updated_at = NOW()
+     WHERE id = $3`,
+    [score, JSON.stringify(contradictions), characterId]
+  );
+}
 import { createNotification } from '../services/notifications';
 
 export const conversationRouter = Router();
@@ -1216,17 +1232,28 @@ conversationRouter.post('/:id/canon-request', authenticate, async (req: AuthRequ
       return;
     }
 
-    // Verify conversation exists and is ended
+    // Verify conversation exists (canon can now be requested mid-chat OR after end)
     const convCheck = await query(
-      'SELECT id, is_active, is_test FROM conversations WHERE id = $1',
+      'SELECT id, is_active, is_test, last_canon_message_id FROM conversations WHERE id = $1',
       [conversationId]
     );
     if (convCheck.rows.length === 0) {
       res.status(404).json({ success: false, message: 'Conversation not found' });
       return;
     }
-    if (convCheck.rows[0].is_active) {
-      res.status(400).json({ success: false, message: 'You can only add to canon after the chat has ended' });
+
+    // Make sure there are new messages to canonize since the last snapshot
+    const newMsgsCheck = await query(
+      `SELECT COUNT(*) FROM messages
+       WHERE conversation_id = $1
+       AND sender_type != 'system'
+       ${convCheck.rows[0].last_canon_message_id ? 'AND created_at > (SELECT created_at FROM messages WHERE id = $2)' : ''}`,
+      convCheck.rows[0].last_canon_message_id
+        ? [conversationId, convCheck.rows[0].last_canon_message_id]
+        : [conversationId]
+    );
+    if (parseInt(newMsgsCheck.rows[0].count) === 0) {
+      res.status(400).json({ success: false, message: 'No new messages to add to canon since last snapshot' });
       return;
     }
 
@@ -1255,7 +1282,13 @@ conversationRouter.post('/:id/canon-request', authenticate, async (req: AuthRequ
 
     if (otherParticipant.rows.length === 0) {
       // Solo/AI-only chat — just apply canon directly to the requester's character
-      await applyCanonToCharacter(character_id, conversationId);
+      const result = await applyCanonToCharacter(character_id, conversationId);
+      if (result?.untilMessageId) {
+        await query(
+          'UPDATE conversations SET last_canon_message_id = $1, last_canon_at = NOW() WHERE id = $2',
+          [result.untilMessageId, conversationId]
+        );
+      }
       res.json({ success: true, message: 'Canon updated for your character', solo: true });
       return;
     }
@@ -1354,6 +1387,23 @@ conversationRouter.post('/:id/canon-request/respond', authenticate, async (req: 
     const result1 = await applyCanonToCharacter(fromCharId, conversationId);
     const result2 = await applyCanonToCharacter(toCharId, conversationId);
 
+    // Advance the conversation's canon pointer so future snapshots start from here
+    const untilMsgId = result1?.untilMessageId || result2?.untilMessageId;
+    if (untilMsgId) {
+      await query(
+        'UPDATE conversations SET last_canon_message_id = $1, last_canon_at = NOW() WHERE id = $2',
+        [untilMsgId, conversationId]
+      );
+
+      // Insert a system message marking this canon point in the chat timeline
+      await query(
+        `INSERT INTO messages (conversation_id, sender_character_id, sender_user_id, sender_type, content)
+         SELECT $1, cp.character_id, cp.user_id, 'system', $2
+         FROM conversation_participants cp WHERE cp.conversation_id = $1 LIMIT 1`,
+        [conversationId, `✨ Canon snapshot — ${notifData.fromCharacterName} & ${notifData.toCharacterName}'s story up to this point is now canon`]
+      );
+    }
+
     // Notify the requester that it was accepted
     await createNotification({
       userId: notifData.fromUserId,
@@ -1382,20 +1432,39 @@ conversationRouter.post('/:id/canon-request/respond', authenticate, async (req: 
 });
 
 /**
- * Helper: Apply canon events + relationship updates to a single character
+ * Helper: Apply canon events + relationship updates to a single character.
+ * Supports mid-chat snapshots: only summarizes messages AFTER the conversation's
+ * last_canon_message_id (if set). Updates last_canon_message_id when done.
  */
 async function applyCanonToCharacter(characterId: string, conversationId: string) {
   // Get character's current history
   const charCheck = await query('SELECT id, history FROM characters WHERE id = $1', [characterId]);
   if (charCheck.rows.length === 0) return null;
 
-  // Check if this conversation was already added to this character's canon
   const existingHistory = charCheck.rows[0].history || [];
-  const alreadyAdded = existingHistory.some((h: any) => h.conversationId === conversationId && h.source === 'canon_chat');
-  if (alreadyAdded) return { eventsAdded: 0, relationshipsUpdated: 0, alreadyExists: true };
 
-  // Use AI to summarize
-  const summary = await summarizeForCanon(characterId, conversationId);
+  // Determine the starting point: after the last canon snapshot (if any)
+  const convRes = await query(
+    'SELECT last_canon_message_id FROM conversations WHERE id = $1',
+    [conversationId]
+  );
+  const sinceMessageId: string | null = convRes.rows[0]?.last_canon_message_id || null;
+
+  // Find the latest non-system message id at the time of this canon snapshot
+  const latestMsgRes = await query(
+    `SELECT id FROM messages
+     WHERE conversation_id = $1 AND sender_type != 'system'
+     ORDER BY created_at DESC LIMIT 1`,
+    [conversationId]
+  );
+  const untilMessageId: string | null = latestMsgRes.rows[0]?.id || null;
+
+  // Use AI to summarize (only new messages since last snapshot)
+  const summary = await summarizeForCanon(characterId, conversationId, sinceMessageId);
+
+  if (summary.events.length === 0 && summary.relationships.length === 0) {
+    return { eventsAdded: 0, relationshipsUpdated: 0, alreadyExists: false, untilMessageId };
+  }
 
   // Apply events to character history
   const newHistory = [
@@ -1406,10 +1475,16 @@ async function applyCanonToCharacter(characterId: string, conversationId: string
       date: new Date().toISOString().split('T')[0],
       source: 'canon_chat',
       conversationId,
+      untilMessageId,
     })),
   ];
 
   await query('UPDATE characters SET history = $1 WHERE id = $2', [JSON.stringify(newHistory), characterId]);
+
+  // Trigger contradiction analysis (fire-and-forget so canon response isn't blocked)
+  analyzeCharacterContradictions(characterId).catch((e) =>
+    console.error(`Contradiction analysis failed for character ${characterId}:`, e.message)
+  );
 
   // Apply relationship updates
   let relationshipsUpdated = 0;
@@ -1442,7 +1517,7 @@ async function applyCanonToCharacter(characterId: string, conversationId: string
     relationshipsUpdated++;
   }
 
-  return { eventsAdded: summary.events.length, relationshipsUpdated };
+  return { eventsAdded: summary.events.length, relationshipsUpdated, untilMessageId };
 }
 
 /**
@@ -1633,3 +1708,282 @@ async function removeCanonFromCharacter(characterId: string, conversationId: str
 
   return removed;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PUBLIC CHATS — mutual consent to make a conversation visible to community
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/conversations/public
+ * Browse publicly shared chats (read-only for non-participants).
+ * Query: ?limit=20&offset=0
+ */
+conversationRouter.get('/public', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt((req.query.limit as string) || '20', 10), 50);
+    const offset = parseInt((req.query.offset as string) || '0', 10);
+
+    const result = await query(
+      `SELECT
+         c.id,
+         c.title,
+         c.context,
+         c.chat_mode,
+         c.world_id,
+         c.last_canon_at,
+         c.created_at,
+         c.updated_at,
+         w.name AS world_name,
+         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_type != 'system') AS message_count,
+         (SELECT json_agg(json_build_object(
+           'character_id', cp.character_id,
+           'character_name', ch.name,
+           'character_avatar', ch.avatar_url,
+           'username', u.username
+         )) FROM conversation_participants cp
+            JOIN characters ch ON cp.character_id = ch.id
+            JOIN users u ON cp.user_id = u.id
+            WHERE cp.conversation_id = c.id) AS participants
+       FROM conversations c
+       LEFT JOIN worlds w ON c.world_id = w.id
+       WHERE c.is_public = TRUE
+       ORDER BY c.updated_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    console.error('Public chats list error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/public-request
+ * Request to make this chat publicly visible. The other participant must accept.
+ * For solo/AI-only chats, the request is auto-applied.
+ */
+conversationRouter.post('/:id/public-request', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+
+    const convCheck = await query(
+      'SELECT id, is_public, public_requested_by FROM conversations WHERE id = $1',
+      [conversationId]
+    );
+    if (convCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+    if (convCheck.rows[0].is_public) {
+      res.status(400).json({ success: false, message: 'Conversation is already public' });
+      return;
+    }
+    if (convCheck.rows[0].public_requested_by) {
+      res.status(400).json({ success: false, message: 'A public request is already pending' });
+      return;
+    }
+
+    // Confirm requester is a participant
+    const myPart = await query(
+      `SELECT cp.character_id, c.name AS character_name
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND cp.user_id = $2`,
+      [conversationId, userId]
+    );
+    if (myPart.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'Not a participant in this conversation' });
+      return;
+    }
+
+    // Find the OTHER human participant
+    const otherPart = await query(
+      `SELECT cp.user_id, cp.character_id, c.name AS character_name, u.username
+       FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       JOIN users u ON cp.user_id = u.id
+       WHERE cp.conversation_id = $1 AND cp.user_id != $2`,
+      [conversationId, userId]
+    );
+
+    // Solo / AI-only chat: publish immediately
+    if (otherPart.rows.length === 0) {
+      await query('UPDATE conversations SET is_public = TRUE WHERE id = $1', [conversationId]);
+      res.json({ success: true, message: 'Conversation is now public', solo: true });
+      return;
+    }
+
+    const other = otherPart.rows[0];
+
+    // Mark as requested & notify the other user
+    await query(
+      'UPDATE conversations SET public_requested_by = $1, public_requested_at = NOW() WHERE id = $2',
+      [userId, conversationId]
+    );
+
+    await createNotification({
+      userId: other.user_id,
+      type: 'public_chat_request',
+      title: 'Make Chat Public?',
+      body: `${req.user!.username} wants to make the chat between ${myPart.rows[0].character_name} & ${other.character_name} public`,
+      data: {
+        conversationId,
+        fromUserId: userId,
+        fromUsername: req.user!.username,
+        fromCharacterName: myPart.rows[0].character_name,
+        toCharacterName: other.character_name,
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: `Public request sent to ${other.username}` });
+  } catch (error: any) {
+    console.error('Public request error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/public-request/respond
+ * Accept/reject a pending public-chat request.
+ * Body: { notification_id: string, action: 'accept' | 'reject' }
+ */
+conversationRouter.post('/:id/public-request/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+    const { notification_id, action } = req.body;
+
+    if (!notification_id || !['accept', 'reject'].includes(action)) {
+      res.status(400).json({ success: false, message: 'notification_id and action (accept/reject) required' });
+      return;
+    }
+
+    const notifResult = await query(
+      'SELECT id, data FROM notifications WHERE id = $1 AND user_id = $2',
+      [notification_id, userId]
+    );
+    if (notifResult.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Notification not found' });
+      return;
+    }
+    const notifData = notifResult.rows[0].data;
+    await query('UPDATE notifications SET is_read = true WHERE id = $1', [notification_id]);
+
+    if (action === 'reject') {
+      // Clear the pending request
+      await query(
+        'UPDATE conversations SET public_requested_by = NULL, public_requested_at = NULL WHERE id = $1',
+        [conversationId]
+      );
+      await createNotification({
+        userId: notifData.fromUserId,
+        type: 'public_chat_rejected',
+        title: 'Public Request Declined',
+        body: `${req.user!.username} declined making the chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName} public`,
+        data: { conversationId },
+        io: req.app.get('io'),
+      });
+      res.json({ success: true, message: 'Public request declined' });
+      return;
+    }
+
+    // Accepted — make it public
+    await query(
+      `UPDATE conversations
+         SET is_public = TRUE,
+             public_requested_by = NULL,
+             public_requested_at = NULL
+       WHERE id = $1`,
+      [conversationId]
+    );
+
+    await createNotification({
+      userId: notifData.fromUserId,
+      type: 'public_chat_accepted',
+      title: 'Chat is now Public!',
+      body: `${req.user!.username} agreed. The chat between ${notifData.fromCharacterName} & ${notifData.toCharacterName} is now public`,
+      data: { conversationId },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: 'Conversation is now public' });
+  } catch (error: any) {
+    console.error('Public respond error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/conversations/:id/unpublish
+ * Either participant can unilaterally make a public chat private again.
+ */
+conversationRouter.post('/:id/unpublish', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const conversationId = req.params.id;
+
+    // Must be a participant
+    const part = await query(
+      'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, userId]
+    );
+    if (part.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'Not a participant' });
+      return;
+    }
+
+    await query(
+      `UPDATE conversations
+         SET is_public = FALSE, public_requested_by = NULL, public_requested_at = NULL
+       WHERE id = $1`,
+      [conversationId]
+    );
+    res.json({ success: true, message: 'Conversation is now private' });
+  } catch (error: any) {
+    console.error('Unpublish error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTRADICTION SCORE — on-demand re-analysis endpoint
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/conversations/characters/:charId/analyze-contradictions
+ * Force a re-analysis of a character's contradiction score (owner only).
+ * (Mounted under the conversations router for convenience; could also live in characters.ts)
+ */
+conversationRouter.post('/characters/:charId/analyze-contradictions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const charId = req.params.charId;
+    const ownerCheck = await query('SELECT creator_id FROM characters WHERE id = $1', [charId]);
+    if (ownerCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+    if (ownerCheck.rows[0].creator_id !== req.user!.id) {
+      res.status(403).json({ success: false, message: 'Only the character owner can analyze contradictions' });
+      return;
+    }
+
+    const { score, contradictions } = await analyzeContradictions(charId);
+    await query(
+      `UPDATE characters
+         SET contradiction_score = $1,
+             contradictions = $2::jsonb,
+             contradictions_updated_at = NOW()
+       WHERE id = $3`,
+      [score, JSON.stringify(contradictions), charId]
+    );
+
+    res.json({ success: true, data: { score, contradictions } });
+  } catch (error: any) {
+    console.error('Analyze contradictions error:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Server error' });
+  }
+});
