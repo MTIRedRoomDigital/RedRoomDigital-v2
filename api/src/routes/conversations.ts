@@ -1960,7 +1960,7 @@ conversationRouter.post('/:id/unpublish', authenticate, async (req: AuthRequest,
  */
 conversationRouter.post('/characters/:charId/analyze-contradictions', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const charId = req.params.charId;
+    const charId = req.params.charId as string;
     const ownerCheck = await query('SELECT creator_id FROM characters WHERE id = $1', [charId]);
     if (ownerCheck.rows.length === 0) {
       res.status(404).json({ success: false, message: 'Character not found' });
