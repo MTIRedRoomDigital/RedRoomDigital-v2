@@ -145,6 +145,106 @@ export function Dashboard() {
     return `${days}d ago`;
   };
 
+  // Brand-new user: no characters yet → show dedicated onboarding hero
+  const isNewUser = data.my_characters.length === 0;
+
+  if (isNewUser) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-10">
+        {/* Onboarding hero */}
+        <div className="relative overflow-hidden rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 via-slate-800/50 to-amber-500/5 p-8 md:p-12 mb-8">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-full text-xs text-red-400 mb-4">
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+              Welcome to RedRoom
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">
+              Hi <span className="text-red-400">{user?.username}</span> — let&apos;s build your first character.
+            </h1>
+            <p className="text-slate-400 mb-6 max-w-xl leading-relaxed">
+              Your character is the heart of everything on RedRoom. Give them a personality, a backstory,
+              and quirks — the AI uses all of it to keep them in character across every chat.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Link
+                href="/characters/create"
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-semibold rounded-xl shadow-lg shadow-red-500/25 transition-all hover:-translate-y-0.5 text-center"
+              >
+                🎭 Create Your First Character
+              </Link>
+              <Link
+                href="/explore/public-chats"
+                className="px-6 py-3 border border-slate-600 hover:border-slate-400 text-slate-300 hover:text-white font-semibold rounded-xl transition-all text-center"
+              >
+                See How Others Play
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* 3-step mini primer */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="p-5 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+            <div className="text-2xl mb-2">🎭</div>
+            <h3 className="text-sm font-semibold text-white mb-1">1. Create a character</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Personality, backstory, likes, dislikes. Takes 2 minutes.
+            </p>
+          </div>
+          <div className="p-5 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+            <div className="text-2xl mb-2">💬</div>
+            <h3 className="text-sm font-semibold text-white mb-1">2. Start a chat</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Play with another writer live, or let AI run a character for you.
+            </p>
+          </div>
+          <div className="p-5 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+            <div className="text-2xl mb-2">📜</div>
+            <h3 className="text-sm font-semibold text-white mb-1">3. Make it canon</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Freeze great moments as permanent character history.
+            </p>
+          </div>
+        </div>
+
+        {/* Recommended characters to chat with (if we have some) */}
+        {data.recommended_characters.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-white">Popular characters to chat with</h2>
+              <Link href="/explore" className="text-xs text-red-400 hover:text-red-300">See all</Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {data.recommended_characters.slice(0, 3).map((char) => (
+                <Link
+                  key={char.id}
+                  href={`/characters/${char.id}`}
+                  className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl hover:border-red-500/30 transition-all hover:-translate-y-0.5 group"
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-red-500 to-purple-600 flex items-center justify-center text-lg shrink-0 overflow-hidden">
+                      {char.avatar_url ? (
+                        <img src={char.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : '🎭'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-white truncate group-hover:text-red-400 transition-colors">{char.name}</h3>
+                      <p className="text-xs text-slate-500">by {char.creator_name}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-400 line-clamp-2">
+                    {char.description || 'A mysterious character awaits...'}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
       {/* Greeting */}
