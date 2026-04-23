@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, optionalAuthenticate, AuthRequest } from '../middleware/auth';
 import { generateAIResponse, summarizeForCanon, analyzeContradictions } from '../services/ai';
 
 /**
@@ -87,25 +87,60 @@ conversationRouter.get('/', authenticate, async (req: AuthRequest, res: Response
 });
 
 /**
- * GET /api/conversations/:id
- * Get conversation details (participants, context, etc.)
+ * GET /api/conversations/public
+ * Browse publicly shared chats (no auth required — community browse page).
+ * Defined BEFORE /:id so Express doesn't match "public" as a conversation id.
+ * Query: ?limit=20&offset=0
  */
-conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+conversationRouter.get('/public', async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
+    const limit = Math.min(parseInt((req.query.limit as string) || '20', 10), 50);
+    const offset = parseInt((req.query.offset as string) || '0', 10);
 
-    // Verify user is a participant
-    const participant = await query(
-      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
-      [req.params.id, userId]
+    const result = await query(
+      `SELECT
+         c.id,
+         c.title,
+         c.context,
+         c.chat_mode,
+         c.world_id,
+         c.last_canon_at,
+         c.created_at,
+         c.updated_at,
+         w.name AS world_name,
+         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_type != 'system') AS message_count,
+         (SELECT json_agg(json_build_object(
+           'character_id', cp.character_id,
+           'character_name', ch.name,
+           'character_avatar', ch.avatar_url,
+           'username', u.username
+         )) FROM conversation_participants cp
+            JOIN characters ch ON cp.character_id = ch.id
+            JOIN users u ON cp.user_id = u.id
+            WHERE cp.conversation_id = c.id) AS participants
+       FROM conversations c
+       LEFT JOIN worlds w ON c.world_id = w.id
+       WHERE c.is_public = TRUE
+       ORDER BY c.updated_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
 
-    if (participant.rows.length === 0) {
-      res.status(403).json({ success: false, message: 'You are not in this conversation' });
-      return;
-    }
+    res.json({ success: true, data: result.rows });
+  } catch (error: any) {
+    console.error('Public chats list error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
 
-    // Get conversation
+/**
+ * GET /api/conversations/:id
+ * Get conversation details (participants, context, etc.)
+ * Allows anonymous read when the conversation is `is_public`.
+ */
+conversationRouter.get('/:id', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    // Get conversation first so we can branch on is_public
     const conv = await query(
       'SELECT * FROM conversations WHERE id = $1',
       [req.params.id]
@@ -114,6 +149,25 @@ conversationRouter.get('/:id', authenticate, async (req: AuthRequest, res: Respo
     if (conv.rows.length === 0) {
       res.status(404).json({ success: false, message: 'Conversation not found' });
       return;
+    }
+
+    const isPublic = conv.rows[0].is_public === true;
+    const userId = req.user?.id;
+
+    // Access rules: public → anyone. Private → participants only.
+    if (!isPublic) {
+      if (!userId) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+      const participant = await query(
+        'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+        [req.params.id, userId]
+      );
+      if (participant.rows.length === 0) {
+        res.status(403).json({ success: false, message: 'You are not in this conversation' });
+        return;
+      }
     }
 
     // Get all participants with character info
@@ -375,20 +429,35 @@ conversationRouter.post('/', authenticate, async (req: AuthRequest, res: Respons
  * GET /api/conversations/:id/messages
  * Get messages in a conversation (paginated)
  */
-conversationRouter.get('/:id/messages', authenticate, async (req: AuthRequest, res: Response) => {
+conversationRouter.get('/:id/messages', optionalAuthenticate, async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const offset = (page - 1) * limit;
 
-    // Verify user is a participant
-    const participant = await query(
-      'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
-      [req.params.id, req.user!.id]
+    // Check is_public so we can allow anonymous read of public chats
+    const convCheck = await query(
+      'SELECT is_public FROM conversations WHERE id = $1',
+      [req.params.id]
     );
+    if (convCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Conversation not found' });
+      return;
+    }
+    const isPublic = convCheck.rows[0].is_public === true;
+    const userId = req.user?.id;
+    const isParticipant = userId
+      ? (await query(
+          'SELECT id FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
+          [req.params.id, userId]
+        )).rows.length > 0
+      : false;
 
-    if (participant.rows.length === 0) {
-      res.status(403).json({ success: false, message: 'You are not in this conversation' });
+    if (!isPublic && !isParticipant) {
+      res.status(userId ? 403 : 401).json({
+        success: false,
+        message: userId ? 'You are not in this conversation' : 'Authentication required',
+      });
       return;
     }
 
@@ -409,12 +478,14 @@ conversationRouter.get('/:id/messages', authenticate, async (req: AuthRequest, r
       [req.params.id, limit, offset]
     );
 
-    // Mark as read
-    await query(
-      `UPDATE conversation_participants SET unread_count = 0, last_read_at = NOW()
-       WHERE conversation_id = $1 AND user_id = $2`,
-      [req.params.id, req.user!.id]
-    );
+    // Mark as read only for actual participants
+    if (isParticipant && userId) {
+      await query(
+        `UPDATE conversation_participants SET unread_count = 0, last_read_at = NOW()
+         WHERE conversation_id = $1 AND user_id = $2`,
+        [req.params.id, userId]
+      );
+    }
 
     res.json({
       success: true,
@@ -1711,53 +1782,9 @@ async function removeCanonFromCharacter(characterId: string, conversationId: str
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PUBLIC CHATS — mutual consent to make a conversation visible to community
+// (Note: GET /public is defined near the top of the file, above /:id,
+// so Express doesn't match "public" as a conversation id.)
 // ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * GET /api/conversations/public
- * Browse publicly shared chats (read-only for non-participants).
- * Query: ?limit=20&offset=0
- */
-conversationRouter.get('/public', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(parseInt((req.query.limit as string) || '20', 10), 50);
-    const offset = parseInt((req.query.offset as string) || '0', 10);
-
-    const result = await query(
-      `SELECT
-         c.id,
-         c.title,
-         c.context,
-         c.chat_mode,
-         c.world_id,
-         c.last_canon_at,
-         c.created_at,
-         c.updated_at,
-         w.name AS world_name,
-         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_type != 'system') AS message_count,
-         (SELECT json_agg(json_build_object(
-           'character_id', cp.character_id,
-           'character_name', ch.name,
-           'character_avatar', ch.avatar_url,
-           'username', u.username
-         )) FROM conversation_participants cp
-            JOIN characters ch ON cp.character_id = ch.id
-            JOIN users u ON cp.user_id = u.id
-            WHERE cp.conversation_id = c.id) AS participants
-       FROM conversations c
-       LEFT JOIN worlds w ON c.world_id = w.id
-       WHERE c.is_public = TRUE
-       ORDER BY c.updated_at DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-
-    res.json({ success: true, data: result.rows });
-  } catch (error: any) {
-    console.error('Public chats list error:', error.message);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
 
 /**
  * POST /api/conversations/:id/public-request

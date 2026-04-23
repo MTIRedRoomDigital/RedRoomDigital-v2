@@ -66,6 +66,44 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
 }
 
 /**
+ * Optional Authentication Middleware
+ *
+ * Like authenticate(), but doesn't reject requests without a token.
+ * If a valid token is present, attaches req.user. Otherwise leaves req.user undefined
+ * and lets the route decide whether the anonymous request is allowed.
+ *
+ * Use this for endpoints that have public (read-only) and private modes —
+ * e.g. viewing a conversation that may be marked `is_public`.
+ */
+export async function optionalAuthenticate(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      next();
+      return;
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as {
+      userId: string;
+    };
+
+    const result = await query(
+      'SELECT id, username, email, role, subscription FROM users WHERE id = $1 AND is_banned = false',
+      [decoded.userId]
+    );
+
+    if (result.rows.length > 0) {
+      req.user = result.rows[0];
+    }
+    next();
+  } catch {
+    // Bad / expired token — treat as anonymous rather than rejecting
+    next();
+  }
+}
+
+/**
  * Subscription Check Middleware
  *
  * Use after authenticate() to ensure user has required subscription tier.
