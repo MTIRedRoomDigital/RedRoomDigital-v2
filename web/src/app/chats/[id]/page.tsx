@@ -98,22 +98,30 @@ export default function ChatRoomPage() {
 
   // Load conversation data + messages
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login');
-      return;
-    }
-
-    if (!user || !id) return;
+    if (authLoading || !id) return;
 
     const loadData = async () => {
-      // Fetch conversation details
+      // Fetch conversation details — backend allows anonymous read for public chats
       const convRes = await api.get<ConversationData>(`/api/conversations/${id}`);
-      if (convRes.success && convRes.data) {
-        setConversation(convRes.data as any);
-      } else {
+      if (!convRes.success || !convRes.data) {
+        // Private chat + no auth, or chat not found
+        if (!user) {
+          router.push('/login');
+          return;
+        }
         setLoading(false);
         return;
       }
+
+      const convData = convRes.data as any;
+
+      // If not logged in and the chat is not public → redirect to login
+      if (!user && !convData.is_public) {
+        router.push('/login');
+        return;
+      }
+
+      setConversation(convData);
 
       // Fetch messages
       const msgRes = await api.get<{ messages: Message[] }>(`/api/conversations/${id}/messages`);
@@ -121,18 +129,18 @@ export default function ChatRoomPage() {
         setMessages((msgRes.data as any).messages || []);
       }
 
-      // Check if there's a pending takeover request for this user
-      const convData = convRes.data as any;
-      if (convData.takeover_requested_by && convData.takeover_requested_by !== user.id) {
-        // Find the character name of the requester
-        const requesterParticipant = (convData.participants || []).find(
-          (p: any) => p.user_id === convData.takeover_requested_by
-        );
-        if (requesterParticipant) {
-          setTakeoverPrompt({ characterName: requesterParticipant.character_name });
+      // Check if there's a pending takeover request for this user (only if logged in)
+      if (user) {
+        if (convData.takeover_requested_by && convData.takeover_requested_by !== user.id) {
+          const requesterParticipant = (convData.participants || []).find(
+            (p: any) => p.user_id === convData.takeover_requested_by
+          );
+          if (requesterParticipant) {
+            setTakeoverPrompt({ characterName: requesterParticipant.character_name });
+          }
+        } else if (convData.takeover_requested_by === user.id) {
+          setTakeoverRequestSent(true);
         }
-      } else if (convData.takeover_requested_by === user.id) {
-        setTakeoverRequestSent(true);
       }
 
       setLoading(false);
@@ -848,7 +856,31 @@ export default function ChatRoomPage() {
       )}
 
       {/* Message Input or Ended Banner */}
-      {conversation.is_active ? (
+      {!user ? (
+        /* Anonymous viewer — read-only CTA */
+        <div className="px-4 py-4 bg-gradient-to-r from-red-900/30 to-amber-900/30 border-t border-red-800/50 shrink-0">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-white">Want to start your own roleplay?</p>
+              <p className="text-xs text-slate-300">Sign up free to create characters and chat with anyone on RedRoom.</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Link
+                href="/login"
+                className="px-4 py-2 text-sm text-slate-300 hover:text-white border border-slate-600 rounded-lg transition-colors"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/register"
+                className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                Sign up free
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : conversation.is_active ? (
         isCharOwnerInAIChat ? (
           /* Character owner can't send messages until takeover is accepted */
           <div className="px-4 py-3 bg-slate-800 border-t border-slate-700 shrink-0">

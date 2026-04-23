@@ -62,11 +62,11 @@ export function Navbar() {
           <Link href="/explore" className="hover:text-white transition-colors">
             Explore
           </Link>
-          <Link href="/worlds" className="hover:text-white transition-colors">
-            Worlds
-          </Link>
           <Link href="/forum" className="hover:text-white transition-colors">
             Forum
+          </Link>
+          <Link href="/guide" className="hover:text-white transition-colors">
+            Guide
           </Link>
           {!user && (
             <Link href="/pricing" className="hover:text-white transition-colors">
@@ -208,11 +208,11 @@ export function Navbar() {
           <Link href="/explore" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
             Explore
           </Link>
-          <Link href="/worlds" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
-            Worlds
-          </Link>
           <Link href="/forum" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
             Forum
+          </Link>
+          <Link href="/guide" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
+            Guide
           </Link>
           {!user && (
             <Link href="/pricing" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
