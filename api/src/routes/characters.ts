@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
-import { learnSpeakingStyle, resetLearnedSpeakingStyle } from '../services/ai';
+import { learnSpeakingStyle, resetLearnedSpeakingStyle, previewVoice } from '../services/ai';
 
 export const characterRouter = Router();
 
@@ -32,6 +32,8 @@ characterRouter.get('/', async (req: Request, res: Response) => {
     const result = await query(
       `SELECT c.id, c.name, c.avatar_url, c.description, c.tags, c.chat_count, c.rating,
               c.world_id, c.created_at, c.like_count, c.dislike_count,
+              (c.learned_speaking_style IS NOT NULL) AS has_learned_voice,
+              (c.personality->>'speaking_style' IS NOT NULL) AS has_preset_voice,
               u.id AS creator_id, u.username AS creator_name,
               w.name AS world_name
        FROM characters c
@@ -345,6 +347,53 @@ characterRouter.get('/:id/vote', authenticate, async (req: AuthRequest, res: Res
     res.json({ success: true, data: { user_vote: result.rows[0]?.vote || null } });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/characters/preview-voice
+ * Pipe a canned scenario through the AI so the user can hear how their character will
+ * sound before saving. Two modes, both auth-gated:
+ *   - { character_id, style, scenario } — use a saved character's full context and
+ *     override just the speaking-style text with what the user is currently typing.
+ *     Owner-only (light info-leak guard even though the only "leaked" data is AI output).
+ *   - { style, scenario, name?, description? } — create-flow preview before the
+ *     character is saved. No character_id, we stitch a minimal prompt from the name/desc.
+ * Body: { character_id?: string | null, style?: string | null, scenario: string,
+ *         name?: string, description?: string }
+ */
+characterRouter.post('/preview-voice', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { character_id, style, scenario, name, description } = req.body || {};
+    if (!scenario || typeof scenario !== 'string' || !scenario.trim()) {
+      res.status(400).json({ success: false, message: 'scenario is required' });
+      return;
+    }
+
+    if (character_id) {
+      const owner = await query('SELECT creator_id FROM characters WHERE id = $1', [character_id]);
+      if (owner.rows.length === 0) {
+        res.status(404).json({ success: false, message: 'Character not found' });
+        return;
+      }
+      if (owner.rows[0].creator_id !== req.user!.id) {
+        res.status(403).json({ success: false, message: 'You can only preview your own characters' });
+        return;
+      }
+    }
+
+    const { reply } = await previewVoice({
+      characterId: character_id || null,
+      styleOverride: style || null,
+      scenario: scenario.trim(),
+      fallbackName: name,
+      fallbackDescription: description,
+    });
+
+    res.json({ success: true, data: { reply } });
+  } catch (error: any) {
+    console.error('Preview-voice error:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
 });
 

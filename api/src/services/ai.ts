@@ -775,6 +775,91 @@ Respond with ONLY the paragraph — no preamble, no headings, no quotes around i
 }
 
 /**
+ * Generate a one-off in-character reply for a "Preview voice" button.
+ *
+ * Two modes:
+ *   - With `characterId`: we load the saved character's full context (name, description,
+ *     personality, world) and override just the speaking-style text with what the user
+ *     is currently typing. Most accurate preview.
+ *   - Without `characterId` (create flow): we build a minimal prompt from whatever fields
+ *     the caller passed plus the style text. Less accurate but still useful to hear the voice.
+ */
+export async function previewVoice(params: {
+  characterId?: string | null;
+  styleOverride?: string | null;
+  scenario: string;
+  // For the create flow — the user hasn't saved yet, so pass these directly
+  fallbackName?: string;
+  fallbackDescription?: string;
+}): Promise<{ reply: string }> {
+  const { characterId, styleOverride, scenario, fallbackName, fallbackDescription } = params;
+
+  let systemPrompt: string;
+
+  if (characterId) {
+    // Load the character normally, but swap in the in-flight style text.
+    const charResult = await query(
+      `SELECT name, description, personality, likes, dislikes, background, tags
+         FROM characters WHERE id = $1`,
+      [characterId]
+    );
+    if (charResult.rows.length === 0) {
+      throw new Error('Character not found');
+    }
+    const c = charResult.rows[0];
+    const p = c.personality || {};
+
+    const blocks: string[] = [];
+    blocks.push(`You ARE ${c.name}. Stay in character. Never acknowledge being an AI.`);
+    if (c.description) blocks.push(`Who you are: ${c.description}`);
+    if (Array.isArray(c.tags) && c.tags.length) blocks.push(`Vibe tags: ${c.tags.join(', ')}`);
+    if (p.traits?.length) blocks.push(`Traits: ${p.traits.join(', ')}`);
+    if (p.values?.length) blocks.push(`Values: ${p.values.join(', ')}`);
+    if (p.flaws?.length) blocks.push(`Flaws: ${p.flaws.join(', ')}`);
+    if (Array.isArray(c.likes) && c.likes.length) blocks.push(`Likes: ${c.likes.join(', ')}`);
+    if (Array.isArray(c.dislikes) && c.dislikes.length) blocks.push(`Dislikes: ${c.dislikes.join(', ')}`);
+    if (c.background) blocks.push(`Backstory: ${c.background}`);
+
+    // Style — override with the in-flight text if provided
+    const style = (styleOverride && styleOverride.trim()) || p.speaking_style || null;
+    if (style) {
+      blocks.push(`\nHOW YOU SPEAK: ${style}`);
+      blocks.push('Match this voice exactly in your reply — word choice, rhythm, sentence length.');
+    }
+
+    blocks.push('\nRespond in character with 1–3 paragraphs. Use *asterisks* for actions.');
+    systemPrompt = blocks.join('\n');
+  } else {
+    // Create-flow preview — no saved character yet.
+    const blocks: string[] = [];
+    const name = fallbackName?.trim() || 'this character';
+    blocks.push(`You ARE ${name}. Stay in character. Never acknowledge being an AI.`);
+    if (fallbackDescription?.trim()) blocks.push(`Who you are: ${fallbackDescription.trim()}`);
+    if (styleOverride && styleOverride.trim()) {
+      blocks.push(`\nHOW YOU SPEAK: ${styleOverride.trim()}`);
+      blocks.push('Match this voice exactly in your reply — word choice, rhythm, sentence length.');
+    }
+    blocks.push('\nRespond in character with 1–3 paragraphs. Use *asterisks* for actions.');
+    systemPrompt = blocks.join('\n');
+  }
+
+  const response = await getOpenAI().chat.completions.create({
+    model: AI_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `[Stranger]: ${scenario}` },
+    ],
+    max_tokens: 300,
+    temperature: 0.85,
+    presence_penalty: 0.3,
+    frequency_penalty: 0.2,
+  });
+
+  const reply = (response.choices[0].message.content || '*remains silent*').trim();
+  return { reply };
+}
+
+/**
  * Clear a character's learned speaking style. Used when the owner hits "Reset to preset"
  * — the next chat will fall back to personality.speaking_style (or nothing) until the
  * learner re-runs.

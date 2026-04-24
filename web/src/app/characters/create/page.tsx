@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { ImageUpload } from '@/components/ImageUpload';
+import { SpeakingStylePicker } from '@/components/SpeakingStylePicker';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -32,6 +33,7 @@ export default function CreateCharacterPage() {
   const [traits, setTraits] = useState('');
   const [values, setValues] = useState('');
   const [flaws, setFlaws] = useState('');
+  const [speakingStyle, setSpeakingStyle] = useState('');
 
   // Background
   const [background, setBackground] = useState('');
@@ -101,6 +103,7 @@ export default function CreateCharacterPage() {
         traits: parseList(traits),
         values: parseList(values),
         flaws: parseList(flaws),
+        speaking_style: speakingStyle.trim() || undefined,
       },
       background: background.trim() || null,
       likes: parseList(likes),
@@ -270,6 +273,12 @@ export default function CreateCharacterPage() {
               />
               <p className="text-xs text-slate-500 mt-1">Flaws make characters interesting and real.</p>
             </div>
+
+            <SpeakingStylePicker
+              value={speakingStyle}
+              onChange={setSpeakingStyle}
+              characterName={name}
+            />
           </div>
         )}
 

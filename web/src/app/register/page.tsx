@@ -41,7 +41,10 @@ export default function RegisterPage() {
     setLoading(false);
 
     if (result.success) {
-      router.push('/profile');
+      // Send new users to the home page — when logged in that renders the Dashboard,
+      // which has our new-user onboarding hero + 3-step primer + CTA to create a character.
+      // Previously this dumped users onto /profile (settings), which bypassed onboarding.
+      router.push('/');
     } else {
       setError(result.message || 'Registration failed');
     }
@@ -184,14 +187,17 @@ export default function RegisterPage() {
               Characters
             </div>
             <div>
-              <div className="text-lg text-white font-bold">&infin;</div>
-              Explore
+              <div className="text-lg text-white font-bold">10<span className="text-xs">/day</span></div>
+              Chat messages
             </div>
             <div>
-              <div className="text-lg text-white font-bold">🎭</div>
-              Chat
+              <div className="text-lg text-white font-bold">&infin;</div>
+              Explore &amp; read
             </div>
           </div>
+          <p className="text-[11px] text-slate-500 text-center mt-3">
+            Need more? <Link href="/pricing" className="text-red-400 hover:text-red-300">See Premium &amp; Ultimate</Link>
+          </p>
         </div>
       </div>
     </div>

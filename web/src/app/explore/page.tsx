@@ -20,6 +20,8 @@ interface Character {
   world_id: string | null;
   world_name: string | null;
   created_at: string;
+  has_learned_voice?: boolean;
+  has_preset_voice?: boolean;
 }
 
 interface World {
@@ -96,6 +98,34 @@ function ExploreContent() {
         <h1 className="text-3xl font-bold text-white mb-2">Explore RedRoom</h1>
         <p className="text-slate-400">Discover characters, chats, and worlds created by the community</p>
       </div>
+
+      {/* Unauthenticated banner — tells visitors landing directly on /explore what
+          they can do here. Without this, a cold visitor from a shared link has no
+          prompt to register or learn what the platform actually is. */}
+      {!user && (
+        <div className="mb-8 p-4 rounded-xl bg-gradient-to-r from-red-900/30 to-amber-900/20 border border-red-800/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+          <div>
+            <p className="text-sm text-white font-medium">New to RedRoom?</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              This is a roleplay platform where AI characters remember every chat. Create your own or chat with the ones below.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Link
+              href="/guide"
+              className="px-3 py-1.5 text-xs border border-slate-600 text-slate-300 hover:text-white hover:border-slate-400 rounded-lg transition-colors"
+            >
+              Read the 2-min guide
+            </Link>
+            <Link
+              href="/register"
+              className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Sign up free
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex justify-center mb-8">
@@ -236,11 +266,28 @@ function CharactersTab() {
                   </div>
                 </div>
 
-                {char.world_name && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-purple-900/30 text-purple-300 border border-purple-800/50 rounded-full mb-2">
-                    🌍 {char.world_name}
-                  </span>
-                )}
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {char.world_name && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-purple-900/30 text-purple-300 border border-purple-800/50 rounded-full">
+                      🌍 {char.world_name}
+                    </span>
+                  )}
+                  {char.has_learned_voice ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-900/30 text-amber-300 border border-amber-800/50 rounded-full"
+                      title="The AI has learned this character's voice from real chats"
+                    >
+                      ✨ Learned voice
+                    </span>
+                  ) : char.has_preset_voice ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-full"
+                      title="Creator picked a speaking style — the AI will refine it as they play"
+                    >
+                      📣 Preset voice
+                    </span>
+                  ) : null}
+                </div>
 
                 {char.description && (
                   <p className="text-sm text-slate-400 mb-3 line-clamp-2">{char.description}</p>

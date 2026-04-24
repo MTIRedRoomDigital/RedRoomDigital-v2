@@ -108,6 +108,116 @@ export default function Home() {
         </div>
       </section>
 
+      {/* What Makes RRD Different — moved above the generic feature grid because this is
+          the single thing that separates us from every other AI-chat product. A cold visitor
+          sees the differentiators BEFORE the generic features. */}
+      <section className="py-20 border-t border-slate-800">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              What Makes RedRoom <span className="bg-gradient-to-r from-red-500 to-amber-400 bg-clip-text text-transparent">Different</span>
+            </h2>
+            <p className="text-slate-400 max-w-2xl mx-auto">
+              Three features you won&apos;t find in any other roleplay app — built to make your characters feel real.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Canon Snapshots */}
+            <Link
+              href="/guide#canon"
+              className="block p-6 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-2xl hover:border-amber-500/50 transition-colors"
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-xs text-amber-400 mb-4">
+                <span>📜</span> Canon System
+              </div>
+              <h3 className="text-xl font-bold text-white mb-3">Chats become canon when you agree</h3>
+              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                Mark any moment in a chat as <span className="text-amber-400 font-medium">official character history</span>.
+                Both players approve, and the event is added to your character&apos;s permanent story — used by AI in every future chat.
+              </p>
+              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-purple-600 shrink-0" />
+                  <div className="text-xs text-slate-300 bg-slate-800 rounded-lg px-2.5 py-1.5">I swear to protect the village.</div>
+                </div>
+                <div className="flex items-center justify-center">
+                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
+                    ✨ Canon up to snapshot
+                  </span>
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-amber-400/80">Learn more →</p>
+            </Link>
+
+            {/* Contradiction Score */}
+            <Link
+              href="/guide#contradiction-score"
+              className="block p-6 bg-gradient-to-br from-green-500/10 to-transparent border border-green-500/20 rounded-2xl hover:border-green-500/50 transition-colors"
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
+                <span>🎯</span> Contradiction Score
+              </div>
+              <h3 className="text-xl font-bold text-white mb-3">AI keeps your characters consistent</h3>
+              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                Every character gets a <span className="text-green-400 font-medium">consistency score</span>.
+                Our AI reads their entire canon and flags contradictions — so your noble paladin doesn&apos;t accidentally become a petty thief.
+              </p>
+              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-purple-600 shrink-0 flex items-center justify-center text-lg">🎭</div>
+                <div className="flex-1">
+                  <div className="text-xs text-white font-medium">Sir Aldric</div>
+                  <div className="text-[10px] text-slate-500">Paladin of the Dawn</div>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/30 rounded-full shrink-0">
+                  ✓ Consistent
+                </span>
+              </div>
+              <p className="mt-4 text-xs text-green-400/80">Learn more →</p>
+            </Link>
+
+            {/* Public Chats */}
+            <Link
+              href="/guide#public-chats"
+              className="block p-6 bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/20 rounded-2xl hover:border-blue-500/50 transition-colors"
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded-full text-xs text-blue-400 mb-4">
+                <span>🌐</span> Public Chats
+              </div>
+              <h3 className="text-xl font-bold text-white mb-3">Share stories with the community</h3>
+              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                Got a legendary RP session? Both players agree and <span className="text-blue-400 font-medium">publish the chat</span>{' '}
+                for anyone to read. Discover new writers and inspire your own stories.
+              </p>
+              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex -space-x-1.5">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-amber-500 border-2 border-slate-900" />
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 border-2 border-slate-900" />
+                  </div>
+                  <div className="text-xs text-white truncate">The Siege of Blackthorn</div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded-full">🌐 Public</span>
+                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">📜 Canon</span>
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-blue-400/80">Learn more →</p>
+            </Link>
+          </div>
+
+          <div className="text-center mt-10">
+            <Link
+              href="/explore/public-chats"
+              className="inline-flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors"
+            >
+              Read real public chats from the community
+              <span>→</span>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section className="py-20 border-t border-slate-800">
         <div className="max-w-6xl mx-auto px-4">
@@ -210,105 +320,6 @@ export default function Home() {
           </div>
         </section>
       )}
-
-      {/* What Makes RRD Different */}
-      <section className="py-20 border-t border-slate-800">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              What Makes RedRoom <span className="bg-gradient-to-r from-red-500 to-amber-400 bg-clip-text text-transparent">Different</span>
-            </h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
-              Three features you won&apos;t find in any other roleplay app — built to make your characters feel real.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Canon Snapshots */}
-            <div className="p-6 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-full text-xs text-amber-400 mb-4">
-                <span>📜</span> Canon System
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">Chats become canon when you agree</h3>
-              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
-                Mark any moment in a chat as <span className="text-amber-400 font-medium">official character history</span>.
-                Both players approve, and the event is added to your character&apos;s permanent story — used by AI in every future chat.
-              </p>
-              {/* Mini mockup */}
-              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-purple-600 shrink-0" />
-                  <div className="text-xs text-slate-300 bg-slate-800 rounded-lg px-2.5 py-1.5">I swear to protect the village.</div>
-                </div>
-                <div className="flex items-center justify-center">
-                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">
-                    ✨ Canon up to snapshot
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Contradiction Score */}
-            <div className="p-6 bg-gradient-to-br from-green-500/10 to-transparent border border-green-500/20 rounded-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/30 rounded-full text-xs text-green-400 mb-4">
-                <span>🎯</span> Contradiction Score
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">AI keeps your characters consistent</h3>
-              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
-                Every character gets a <span className="text-green-400 font-medium">consistency score</span>.
-                Our AI reads their entire canon and flags contradictions — so your noble paladin doesn&apos;t accidentally become a petty thief.
-              </p>
-              {/* Mini mockup */}
-              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-purple-600 shrink-0 flex items-center justify-center text-lg">🎭</div>
-                <div className="flex-1">
-                  <div className="text-xs text-white font-medium">Sir Aldric</div>
-                  <div className="text-[10px] text-slate-500">Paladin of the Dawn</div>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 bg-green-500/10 text-green-400 border border-green-500/30 rounded-full shrink-0">
-                  ✓ Consistent
-                </span>
-              </div>
-            </div>
-
-            {/* Public Chats */}
-            <div className="p-6 bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/20 rounded-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded-full text-xs text-blue-400 mb-4">
-                <span>🌐</span> Public Chats
-              </div>
-              <h3 className="text-xl font-bold text-white mb-3">Share stories with the community</h3>
-              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
-                Got a legendary RP session? Both players agree and <span className="text-blue-400 font-medium">publish the chat</span>{' '}
-                for anyone to read. Discover new writers and inspire your own stories.
-              </p>
-              {/* Mini mockup */}
-              <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="flex -space-x-1.5">
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-red-500 to-amber-500 border-2 border-slate-900" />
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 border-2 border-slate-900" />
-                  </div>
-                  <div className="text-xs text-white truncate">The Siege of Blackthorn</div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded-full">🌐 Public</span>
-                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-full">📜 Canon</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-center mt-10">
-            <Link
-              href="/explore/public-chats"
-              className="inline-flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors"
-            >
-              Read real public chats from the community
-              <span>→</span>
-            </Link>
-          </div>
-        </div>
-      </section>
 
       {/* How It Works */}
       <section className="py-20 border-t border-slate-800">

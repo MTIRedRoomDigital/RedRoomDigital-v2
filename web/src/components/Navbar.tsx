@@ -65,8 +65,13 @@ export function Navbar() {
           <Link href="/forum" className="hover:text-white transition-colors">
             Forum
           </Link>
-          <Link href="/guide" className="hover:text-white transition-colors">
+          <Link href="/guide" className="hover:text-white transition-colors inline-flex items-center gap-1.5">
             Guide
+            {!user && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
+                New? Start here
+              </span>
+            )}
           </Link>
           {!user && (
             <Link href="/pricing" className="hover:text-white transition-colors">

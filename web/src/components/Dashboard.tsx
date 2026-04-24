@@ -271,6 +271,33 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Second-step nudge — user has a character but hasn't started a chat yet.
+          Gets them from "I made something" to "I used something." Hidden once they chat. */}
+      {data.recent_chats.length === 0 && (
+        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-amber-900/20 to-red-900/20 border border-amber-700/40 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">Next: start your first chat 💬</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Your character is built — now take them for a spin. Find someone to roleplay with or chat with an AI character.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Link
+              href="/explore"
+              className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Find a chat partner
+            </Link>
+            <Link
+              href="/guide#canon"
+              className="px-3 py-1.5 text-xs border border-slate-600 text-slate-300 hover:text-white rounded-lg transition-colors"
+            >
+              How canon works
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Top Row: Quick Actions + Notifications + Friends */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* My Characters */}

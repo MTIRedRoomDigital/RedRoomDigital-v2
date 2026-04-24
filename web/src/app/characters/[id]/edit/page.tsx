@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { ImageUpload } from '@/components/ImageUpload';
+import { SpeakingStylePicker } from '@/components/SpeakingStylePicker';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -12,7 +13,7 @@ interface Character {
   creator_id: string;
   name: string;
   description: string | null;
-  personality: { traits?: string[]; values?: string[]; flaws?: string[] };
+  personality: { traits?: string[]; values?: string[]; flaws?: string[]; speaking_style?: string };
   background: string | null;
   likes: string[];
   dislikes: string[];
@@ -39,6 +40,7 @@ export default function EditCharacterPage() {
   const [traits, setTraits] = useState('');
   const [values, setValues] = useState('');
   const [flaws, setFlaws] = useState('');
+  const [speakingStyle, setSpeakingStyle] = useState('');
 
   // Background
   const [background, setBackground] = useState('');
@@ -88,6 +90,7 @@ export default function EditCharacterPage() {
         setTraits((p.traits || []).join(', '));
         setValues((p.values || []).join(', '));
         setFlaws((p.flaws || []).join(', '));
+        setSpeakingStyle(p.speaking_style || '');
 
         setLikes((c.likes || []).join(', '));
         setDislikes((c.dislikes || []).join(', '));
@@ -158,6 +161,7 @@ export default function EditCharacterPage() {
         traits: parseList(traits),
         values: parseList(values),
         flaws: parseList(flaws),
+        speaking_style: speakingStyle.trim() || undefined,
       },
       background: background.trim() || null,
       likes: parseList(likes),
@@ -327,6 +331,13 @@ export default function EditCharacterPage() {
               />
               <p className="text-xs text-slate-500 mt-1">Flaws make characters interesting and real.</p>
             </div>
+
+            <SpeakingStylePicker
+              value={speakingStyle}
+              onChange={setSpeakingStyle}
+              characterId={params.id as string}
+              characterName={name}
+            />
           </div>
         )}
 
