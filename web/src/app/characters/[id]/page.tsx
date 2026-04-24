@@ -14,7 +14,10 @@ interface Character {
   name: string;
   avatar_url: string | null;
   description: string | null;
-  personality: { traits?: string[]; values?: string[]; flaws?: string[] };
+  personality: { traits?: string[]; values?: string[]; flaws?: string[]; speaking_style?: string };
+  learned_speaking_style: string | null;
+  style_last_learned_at: string | null;
+  style_sample_count: number;
   background: string | null;
   likes: string[];
   dislikes: string[];
@@ -73,6 +76,9 @@ export default function CharacterDetailPage() {
   const [dislikeCount, setDislikeCount] = useState(0);
   const [voting, setVoting] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [learningStyle, setLearningStyle] = useState(false);
+  const [resettingStyle, setResettingStyle] = useState(false);
+  const [styleMessage, setStyleMessage] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Character>(`/api/characters/${params.id}`).then((res) => {
@@ -451,6 +457,110 @@ export default function CharacterDetailPage() {
             <p className="text-slate-500 italic text-sm">No personality details yet.</p>
           )}
         </div>
+
+        {/* Speaking Voice */}
+        {(() => {
+          const isOwner = user?.id === character.creator_id;
+          const hasLearned = !!character.learned_speaking_style;
+          const hasPreset = !!character.personality?.speaking_style;
+          if (!hasLearned && !hasPreset && !isOwner) return null;
+          const displayedVoice = character.learned_speaking_style || character.personality?.speaking_style;
+
+          const handleLearn = async () => {
+            if (learningStyle) return;
+            setLearningStyle(true);
+            setStyleMessage(null);
+            const res = await api.post<{ updated: boolean; sample_count?: number; message: string }>(
+              `/api/characters/${character.id}/learn-style`,
+              {}
+            );
+            setLearningStyle(false);
+            if (res.success) {
+              setStyleMessage((res.data as any).message || (res as any).message || 'Done.');
+              // Refresh character to show new learned style
+              const refreshed = await api.get<Character>(`/api/characters/${character.id}`);
+              if (refreshed.success && refreshed.data) setCharacter(refreshed.data);
+            } else {
+              setStyleMessage((res as any).message || 'Failed to learn style.');
+            }
+          };
+
+          const handleReset = async () => {
+            if (resettingStyle) return;
+            if (!confirm('Clear the AI-learned voice and fall back to your preset? You can always relearn later.')) return;
+            setResettingStyle(true);
+            setStyleMessage(null);
+            const res = await api.post<{ message: string }>(`/api/characters/${character.id}/reset-style`, {});
+            setResettingStyle(false);
+            if (res.success) {
+              setStyleMessage((res.data as any)?.message || 'Learned voice cleared.');
+              const refreshed = await api.get<Character>(`/api/characters/${character.id}`);
+              if (refreshed.success && refreshed.data) setCharacter(refreshed.data);
+            } else {
+              setStyleMessage((res as any).message || 'Failed to reset.');
+            }
+          };
+
+          return (
+            <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  📣 Speaking Voice
+                  {hasLearned ? (
+                    <span className="text-[10px] px-2 py-0.5 bg-purple-900/30 text-purple-300 border border-purple-800/50 rounded-full">
+                      ✨ Learned from {character.style_sample_count} messages
+                    </span>
+                  ) : hasPreset ? (
+                    <span className="text-[10px] px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full">
+                      Preset
+                    </span>
+                  ) : null}
+                </h2>
+              </div>
+
+              {displayedVoice ? (
+                <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{displayedVoice}</p>
+              ) : (
+                <p className="text-sm text-slate-500 italic">
+                  No voice set. Play this character in a few chats — the AI will learn your style.
+                </p>
+              )}
+
+              {isOwner && (
+                <div className="mt-4 pt-3 border-t border-slate-700/60">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      onClick={handleLearn}
+                      disabled={learningStyle}
+                      className="px-3 py-1.5 text-xs bg-purple-600/80 hover:bg-purple-600 disabled:bg-slate-700 text-white rounded-lg transition-colors"
+                    >
+                      {learningStyle
+                        ? '✨ Learning...'
+                        : hasLearned
+                        ? '✨ Relearn from recent chats'
+                        : '✨ Learn voice now'}
+                    </button>
+                    {hasLearned && (
+                      <button
+                        onClick={handleReset}
+                        disabled={resettingStyle}
+                        className="px-3 py-1.5 text-xs text-slate-400 hover:text-white border border-slate-600 hover:border-slate-500 rounded-lg transition-colors"
+                      >
+                        {resettingStyle ? 'Resetting...' : 'Reset to preset'}
+                      </button>
+                    )}
+                    <span className="text-[11px] text-slate-500 ml-auto">
+                      Updates automatically as you play
+                    </span>
+                  </div>
+                  {styleMessage && (
+                    <p className="mt-2 text-xs text-purple-300">{styleMessage}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Likes & Dislikes */}
         <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">

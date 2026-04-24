@@ -111,9 +111,12 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
   }
 
   // === HOW YOU SPEAK (writing style / voice) ===
-  if (personality.speaking_style) {
+  // Prefer the AI-learned voice (observed from the owner's actual messages) over the
+  // user-picked preset. The preset is a starting hint; the learned style is ground truth.
+  const voice: string | null = char.learned_speaking_style || personality.speaking_style || null;
+  if (voice) {
     sections.push('\n--- HOW YOU SPEAK ---');
-    sections.push(personality.speaking_style);
+    sections.push(voice);
     sections.push('Match this voice in every message. Word choice, rhythm, and sentence length should feel unmistakably like you.');
   }
 
@@ -650,4 +653,139 @@ Rules:
     console.error('Failed to parse world canon summary:', content);
     return { worldEvents: [], characterUpdates: [], outcome: 'Campaign concluded.' };
   }
+}
+
+/**
+ * Learn a character's actual speaking style from how their OWNER writes them.
+ *
+ * Looks at up-to-50 of the character's most recent messages where the sender was
+ * the character's creator (not AI, not a takeover by another user). Asks the LLM
+ * to summarize the observed voice — sentence length, vocabulary, accent, tics,
+ * emotional default — in one paragraph.
+ *
+ * Writes the result to characters.learned_speaking_style. The prompt builder
+ * prefers this over the user-picked preset once it exists.
+ *
+ * Skips the learn if:
+ *   - Character has fewer than MIN_SAMPLES owner-authored messages total
+ *   - Sample count hasn't grown enough since the last learn (avoids wasted tokens)
+ *
+ * Returns { updated: true, sampleCount } on success,
+ *         { updated: false, reason } when skipped.
+ */
+const STYLE_MIN_SAMPLES = 10; // need at least this many owner messages to learn at all
+const STYLE_REFRESH_DELTA = 10; // need this many NEW messages since last learn to refresh
+
+export async function learnSpeakingStyle(
+  characterId: string,
+  opts: { force?: boolean } = {}
+): Promise<{ updated: boolean; sampleCount?: number; reason?: string }> {
+  // Pull the character + its owner + the last-learned state.
+  const charResult = await query(
+    `SELECT id, name, creator_id, style_sample_count, learned_speaking_style
+     FROM characters WHERE id = $1`,
+    [characterId]
+  );
+  if (charResult.rows.length === 0) return { updated: false, reason: 'not-found' };
+  const char = charResult.rows[0];
+
+  // Count how many owner-authored messages exist for this character.
+  const countResult = await query(
+    `SELECT COUNT(*)::int AS n
+       FROM messages m
+      WHERE m.sender_character_id = $1
+        AND m.sender_user_id = $2
+        AND m.sender_type = 'user'`,
+    [characterId, char.creator_id]
+  );
+  const totalSamples: number = countResult.rows[0]?.n || 0;
+
+  if (!opts.force && totalSamples < STYLE_MIN_SAMPLES) {
+    return { updated: false, reason: `not-enough-samples (${totalSamples}/${STYLE_MIN_SAMPLES})` };
+  }
+
+  const lastCount: number = char.style_sample_count || 0;
+  if (!opts.force && totalSamples - lastCount < STYLE_REFRESH_DELTA && char.learned_speaking_style) {
+    return { updated: false, reason: `insufficient-new-samples (${totalSamples - lastCount} new)` };
+  }
+
+  // Grab the 50 most recent owner-authored messages for the style sample.
+  const samples = await query(
+    `SELECT content
+       FROM messages
+      WHERE sender_character_id = $1
+        AND sender_user_id = $2
+        AND sender_type = 'user'
+      ORDER BY created_at DESC
+      LIMIT 50`,
+    [characterId, char.creator_id]
+  );
+
+  if (samples.rows.length === 0) {
+    return { updated: false, reason: 'no-samples' };
+  }
+
+  // Reverse to chronological order so the model sees style evolution.
+  const sampleBlock = samples.rows
+    .reverse()
+    .map((r: any, i: number) => `${i + 1}. ${r.content}`)
+    .join('\n');
+
+  const prompt = `You are a voice coach analyzing how a writer portrays the character "${char.name}" in roleplay.
+
+Below are ${samples.rows.length} recent in-character messages written by the character's owner (not the AI, not another user). Study them and write a SINGLE PARAGRAPH (4–7 sentences) describing this character's observed speaking style — the kind of guide you'd hand to a stand-in actor.
+
+Focus on:
+- Sentence length and rhythm (short/clipped, long/winding, fragmented, etc.)
+- Vocabulary register (formal, casual, archaic, slang-heavy, technical)
+- Accent or dialect markers (specific words, contractions, dropped letters)
+- Emotional default (cold, warm, sarcastic, nervous, menacing, playful)
+- Verbal tics, catchphrases, curse patterns, or signature phrasings
+- How they write actions (*asterisks*, descriptive, minimal)
+
+Write it in the SECOND PERSON ("You speak in...") so it can be dropped directly into a character prompt. Be specific and concrete — quote short phrases from the samples where it helps. Do NOT describe the character's personality, backstory, or motives; ONLY how they talk.
+
+MESSAGES:
+${sampleBlock}
+
+Respond with ONLY the paragraph — no preamble, no headings, no quotes around it.`;
+
+  const response = await getOpenAI().chat.completions.create({
+    model: AI_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 400,
+    temperature: 0.3,
+  });
+
+  const learned = (response.choices[0].message.content || '').trim();
+  if (!learned || learned.length < 40) {
+    return { updated: false, reason: 'empty-or-too-short' };
+  }
+
+  await query(
+    `UPDATE characters
+        SET learned_speaking_style = $1,
+            style_sample_count = $2,
+            style_last_learned_at = NOW()
+      WHERE id = $3`,
+    [learned, totalSamples, characterId]
+  );
+
+  return { updated: true, sampleCount: totalSamples };
+}
+
+/**
+ * Clear a character's learned speaking style. Used when the owner hits "Reset to preset"
+ * — the next chat will fall back to personality.speaking_style (or nothing) until the
+ * learner re-runs.
+ */
+export async function resetLearnedSpeakingStyle(characterId: string): Promise<void> {
+  await query(
+    `UPDATE characters
+        SET learned_speaking_style = NULL,
+            style_sample_count = 0,
+            style_last_learned_at = NULL
+      WHERE id = $1`,
+    [characterId]
+  );
 }

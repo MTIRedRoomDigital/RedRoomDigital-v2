@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
+import { learnSpeakingStyle, resetLearnedSpeakingStyle } from '../services/ai';
 
 export const characterRouter = Router();
 
@@ -343,6 +344,77 @@ characterRouter.get('/:id/vote', authenticate, async (req: AuthRequest, res: Res
     );
     res.json({ success: true, data: { user_vote: result.rows[0]?.vote || null } });
   } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/characters/:id/learn-style
+ * Manually trigger speaking-style learning for a character. Owner-only.
+ * Normally this runs automatically after every canon snapshot; this route lets
+ * owners force a refresh (e.g. after a big chat arc) or bootstrap the first time.
+ */
+characterRouter.post('/:id/learn-style', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const charId = req.params.id as string;
+    const ownerCheck = await query('SELECT creator_id FROM characters WHERE id = $1', [charId]);
+    if (ownerCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+    if (ownerCheck.rows[0].creator_id !== req.user!.id) {
+      res.status(403).json({ success: false, message: 'Only the character owner can trigger this' });
+      return;
+    }
+
+    const result = await learnSpeakingStyle(charId, { force: true });
+    if (!result.updated) {
+      res.json({
+        success: true,
+        updated: false,
+        reason: result.reason,
+        message:
+          result.reason?.startsWith('not-enough-samples')
+            ? "Not enough messages yet — play this character in a few chats first."
+            : 'No new style data to learn from yet.',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      updated: true,
+      sample_count: result.sampleCount,
+      message: `Learned voice updated from ${result.sampleCount} messages.`,
+    });
+  } catch (error: any) {
+    console.error('Learn-style error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/characters/:id/reset-style
+ * Clear a character's learned speaking style. Falls back to personality.speaking_style
+ * (the preset) until the learner re-runs. Owner-only.
+ */
+characterRouter.post('/:id/reset-style', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const charId = req.params.id as string;
+    const ownerCheck = await query('SELECT creator_id FROM characters WHERE id = $1', [charId]);
+    if (ownerCheck.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Character not found' });
+      return;
+    }
+    if (ownerCheck.rows[0].creator_id !== req.user!.id) {
+      res.status(403).json({ success: false, message: 'Only the character owner can reset this' });
+      return;
+    }
+
+    await resetLearnedSpeakingStyle(charId);
+    res.json({ success: true, message: 'Learned voice cleared. Back to your preset.' });
+  } catch (error: any) {
+    console.error('Reset-style error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

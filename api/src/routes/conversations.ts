@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, optionalAuthenticate, AuthRequest } from '../middleware/auth';
-import { generateAIResponse, summarizeForCanon, analyzeContradictions } from '../services/ai';
+import { generateAIResponse, summarizeForCanon, analyzeContradictions, learnSpeakingStyle, resetLearnedSpeakingStyle } from '../services/ai';
 
 /**
  * Helper: Re-analyze a character for contradictions and persist the score.
@@ -1555,6 +1555,13 @@ async function applyCanonToCharacter(characterId: string, conversationId: string
   // Trigger contradiction analysis (fire-and-forget so canon response isn't blocked)
   analyzeCharacterContradictions(characterId).catch((e) =>
     console.error(`Contradiction analysis failed for character ${characterId}:`, e.message)
+  );
+
+  // Learn the character's speaking style from how the owner writes them (fire-and-forget).
+  // Internally gated: only runs if enough new owner-authored messages have accumulated
+  // since the last learn, so it won't spam tokens on every snapshot.
+  learnSpeakingStyle(characterId).catch((e) =>
+    console.error(`Speaking-style learn failed for character ${characterId}:`, e.message)
   );
 
   // Apply relationship updates
