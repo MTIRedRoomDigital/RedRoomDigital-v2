@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
 import { createNotification } from '../services/notifications';
+import { recalcWorldContradictions } from './conversations';
 
 export const worldRouter = Router();
 
@@ -1016,6 +1017,41 @@ worldRouter.post('/:id/vote', authenticate, async (req: AuthRequest, res: Respon
     });
   } catch (error: any) {
     console.error('World vote error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/worlds/:id/recalc-contradictions
+ * Manually trigger a contradiction recalculation for a world.
+ * World creator only. Bypasses the 1hr cooldown (force=true) so a creator
+ * who just edited lore/rules can immediately see a new score.
+ * The score itself is public (visible on the world page), but this trigger is owner-only
+ * to avoid strangers burning AI tokens.
+ */
+worldRouter.post('/:id/recalc-contradictions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const worldId = req.params.id as string;
+
+    const world = await query('SELECT creator_id FROM worlds WHERE id = $1', [worldId]);
+    if (world.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'World not found' });
+      return;
+    }
+    if (world.rows[0].creator_id !== userId) {
+      res.status(403).json({ success: false, message: 'Only the world creator can trigger a recalculation' });
+      return;
+    }
+
+    // Fire and forget — this can take several seconds due to the AI pass
+    recalcWorldContradictions(worldId, { force: true }).catch((e: any) =>
+      console.error('World recalc error:', e?.message)
+    );
+
+    res.json({ success: true, message: 'Recalculation started. Refresh in a moment to see the new score.' });
+  } catch (error: any) {
+    console.error('World recalc trigger error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

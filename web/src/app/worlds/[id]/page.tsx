@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
+import { ConsistencyBadge, ConsistencyPanel, type Contradiction } from '@/components/ConsistencyBadge';
 
 interface WorldData {
   id: string;
@@ -32,6 +33,9 @@ interface WorldData {
   characters: WorldCharacter[];
   locations: WorldLocation[];
   world_history: { event: string; impact: string; type?: string; campaignName?: string; date?: string }[];
+  contradiction_score?: number;
+  contradictions?: Contradiction[];
+  contradictions_updated_at?: string | null;
 }
 
 interface WorldLocation {
@@ -86,6 +90,7 @@ export default function WorldDetailPage() {
   const [addingLocation, setAddingLocation] = useState(false);
   const [myCharacters, setMyCharacters] = useState<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>([]);
   const [requestingChar, setRequestingChar] = useState<string | null>(null);
+  const [recalcBusy, setRecalcBusy] = useState(false);
 
   // Campaign creation state
   const [showCreateCampaign, setShowCreateCampaign] = useState(false);
@@ -345,6 +350,12 @@ export default function WorldDetailPage() {
             {world.join_mode === 'locked' && (
               <span className="text-xs px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded-full border border-amber-800/50">🔒 Locked</span>
             )}
+            {world.contradictions_updated_at && (
+              <ConsistencyBadge
+                score={world.contradiction_score || 0}
+                tooltip="World consistency — combines AI coherence analysis of lore/rules with the aggregate consistency of member characters. Lower is better."
+              />
+            )}
           </div>
 
           {world.setting && (
@@ -504,6 +515,37 @@ export default function WorldDetailPage() {
       {/* Tab Content */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Consistency — public to all, recalc button only for creator */}
+          {(isCreator || (world.contradictions && world.contradictions.length > 0)) && (
+            <ConsistencyPanel
+              score={world.contradiction_score || 0}
+              contradictions={world.contradictions || []}
+              updatedAt={world.contradictions_updated_at || null}
+              kind="world"
+              onRecalc={
+                isCreator
+                  ? async () => {
+                      setRecalcBusy(true);
+                      const res = await api.post(`/api/worlds/${world.id}/recalc-contradictions`, {});
+                      if (!res.success) {
+                        alert((res as any).message || 'Failed to recalculate');
+                        setRecalcBusy(false);
+                        return;
+                      }
+                      // Recalc runs async server-side; poll once after a delay
+                      setTimeout(async () => {
+                        const fresh = await api.get<WorldData>(`/api/worlds/${world.id}`);
+                        if (fresh.success && fresh.data) setWorld(fresh.data as any);
+                        setRecalcBusy(false);
+                      }, 6000);
+                    }
+                  : undefined
+              }
+              recalcBusy={recalcBusy}
+              recalcLabel="Recalculate (uses AI)"
+            />
+          )}
+
           {/* Lore */}
           {world.lore && (
             <div className="p-5 bg-slate-800 border border-slate-700 rounded-xl">

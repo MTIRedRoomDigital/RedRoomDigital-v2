@@ -1,11 +1,23 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, optionalAuthenticate, AuthRequest } from '../middleware/auth';
-import { generateAIResponse, summarizeForCanon, analyzeContradictions, learnSpeakingStyle, resetLearnedSpeakingStyle } from '../services/ai';
+import {
+  generateAIResponse,
+  summarizeForCanon,
+  analyzeContradictions,
+  analyzeUserContradictions,
+  analyzeWorldContradictions,
+  learnSpeakingStyle,
+  resetLearnedSpeakingStyle,
+} from '../services/ai';
 
 /**
  * Helper: Re-analyze a character for contradictions and persist the score.
+ * Then cascade to the owning user and (if assigned) the owning world.
+ *
  * Fire-and-forget: called after canon is applied so the next chat has a fresh consistency signal.
+ * The world pass is gated behind a rate limit inside recalcWorldContradictions to avoid hammering
+ * the AI on every canon snapshot.
  */
 async function analyzeCharacterContradictions(characterId: string) {
   const { score, contradictions } = await analyzeContradictions(characterId);
@@ -16,6 +28,62 @@ async function analyzeCharacterContradictions(characterId: string) {
            contradictions_updated_at = NOW()
      WHERE id = $3`,
     [score, JSON.stringify(contradictions), characterId]
+  );
+
+  // Find the owner and world, cascade updates.
+  const ctx = await query('SELECT creator_id, world_id FROM characters WHERE id = $1', [characterId]);
+  if (ctx.rows.length === 0) return;
+  const { creator_id, world_id } = ctx.rows[0];
+
+  // User recalc is cheap (pure SQL aggregate), run unconditionally.
+  if (creator_id) {
+    recalcUserContradictions(creator_id).catch((e) =>
+      console.error(`User contradiction recalc failed for ${creator_id}:`, e.message)
+    );
+  }
+
+  // World recalc involves an AI call — rate-limited to once per hour per world.
+  if (world_id) {
+    recalcWorldContradictions(world_id).catch((e) =>
+      console.error(`World contradiction recalc failed for ${world_id}:`, e.message)
+    );
+  }
+}
+
+/** Recompute a user's aggregate score from their characters. Pure SQL, safe to call often. */
+export async function recalcUserContradictions(userId: string) {
+  const { score, contradictions } = await analyzeUserContradictions(userId);
+  await query(
+    `UPDATE users
+       SET contradiction_score = $1,
+           contradictions = $2::jsonb,
+           contradictions_updated_at = NOW()
+     WHERE id = $3`,
+    [score, JSON.stringify(contradictions), userId]
+  );
+}
+
+/**
+ * Recompute a world's score. Rate-limited to ≥1hr between AI passes to avoid
+ * running an expensive prompt on every canon snapshot. A `force` flag is used
+ * by the manual-trigger route.
+ */
+export async function recalcWorldContradictions(worldId: string, opts: { force?: boolean } = {}) {
+  if (!opts.force) {
+    const last = await query('SELECT contradictions_updated_at FROM worlds WHERE id = $1', [worldId]);
+    const lastAt = last.rows[0]?.contradictions_updated_at as Date | null;
+    if (lastAt && Date.now() - new Date(lastAt).getTime() < 60 * 60 * 1000) {
+      return; // skipped — will run again next canon-ish event after the cooldown
+    }
+  }
+  const { score, contradictions } = await analyzeWorldContradictions(worldId);
+  await query(
+    `UPDATE worlds
+       SET contradiction_score = $1,
+           contradictions = $2::jsonb,
+           contradictions_updated_at = NOW()
+     WHERE id = $3`,
+    [score, JSON.stringify(contradictions), worldId]
   );
 }
 import { createNotification } from '../services/notifications';

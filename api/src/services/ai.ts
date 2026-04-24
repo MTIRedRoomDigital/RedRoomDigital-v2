@@ -567,6 +567,253 @@ Only flag REAL contradictions. If the character is internally consistent, return
 }
 
 /**
+ * Compute a user's contradiction score as a weighted aggregate of their characters'
+ * scores. Weighted by canon depth — a character with 40 history events counts more
+ * than one with 2, so a single janky throwaway doesn't dominate a prolific writer's
+ * reputation. Pure SQL, no AI call.
+ *
+ * Returned `contradictions` is a flat list of the top 10 contradictions across all
+ * their characters, each tagged with which character it came from, so the user
+ * profile can render "here's what the AI flagged across your characters."
+ */
+export async function analyzeUserContradictions(
+  userId: string
+): Promise<{
+  score: number;
+  contradictions: {
+    severity: 'minor' | 'moderate' | 'severe';
+    description: string;
+    evidence: string[];
+    character_id: string;
+    character_name: string;
+  }[];
+}> {
+  const rows = await query(
+    `SELECT id, name, contradiction_score, contradictions,
+            COALESCE(jsonb_array_length(history), 0) AS history_count
+       FROM characters
+      WHERE creator_id = $1`,
+    [userId]
+  );
+
+  if (rows.rows.length === 0) {
+    return { score: 0, contradictions: [] };
+  }
+
+  // Weight: every character counts for at least 1, then +1 per 5 canon events.
+  // Caps at a 5x multiplier so one monstrously-deep character can't drown out the
+  // signal from the others entirely.
+  let totalWeight = 0;
+  let weightedSum = 0;
+  const flatContradictions: {
+    severity: 'minor' | 'moderate' | 'severe';
+    description: string;
+    evidence: string[];
+    character_id: string;
+    character_name: string;
+  }[] = [];
+
+  for (const c of rows.rows) {
+    const historyCount = parseInt(c.history_count) || 0;
+    const weight = Math.min(1 + Math.floor(historyCount / 5), 5);
+    totalWeight += weight;
+    weightedSum += (c.contradiction_score || 0) * weight;
+
+    const cs = Array.isArray(c.contradictions) ? c.contradictions : [];
+    for (const k of cs) {
+      flatContradictions.push({
+        severity: (['minor', 'moderate', 'severe'].includes(k.severity) ? k.severity : 'minor') as any,
+        description: k.description,
+        evidence: Array.isArray(k.evidence) ? k.evidence : [],
+        character_id: c.id,
+        character_name: c.name,
+      });
+    }
+  }
+
+  const score = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : 0;
+
+  // Top 10 by severity
+  const sevRank: Record<string, number> = { severe: 3, moderate: 2, minor: 1 };
+  flatContradictions.sort((a, b) => (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0));
+
+  return { score, contradictions: flatContradictions.slice(0, 10) };
+}
+
+/**
+ * Analyze a world for internal coherence. Unlike the character version, this combines
+ * TWO signals into one public score:
+ *
+ *   (a) AI coherence pass — the world's own lore, rules, and setting are fed to the
+ *       model alongside canon summaries of every character assigned to the world, and
+ *       the model flags contradictions ("world rules say magic is extinct, but 3
+ *       characters reference working spells"). This is the expensive part.
+ *
+ *   (b) Aggregate member character scores — if the world's residents are individually
+ *       inconsistent, that drags the world's score up too (weighted at 30% of final).
+ *
+ * Returns: { score, contradictions[] }, where each contradiction is tagged with a
+ * `source`: 'world-coherence' or `character:${id}:${name}` so the world page can
+ * render a useful breakdown.
+ */
+export async function analyzeWorldContradictions(
+  worldId: string
+): Promise<{
+  score: number;
+  contradictions: {
+    severity: 'minor' | 'moderate' | 'severe';
+    description: string;
+    evidence: string[];
+    source: string;
+  }[];
+}> {
+  const worldRes = await query(
+    'SELECT id, name, description, lore, rules, setting FROM worlds WHERE id = $1',
+    [worldId]
+  );
+  if (worldRes.rows.length === 0) throw new Error('World not found');
+  const w = worldRes.rows[0];
+
+  // Pull member characters with their canon. We only need enough to give the AI
+  // signal — cap at ~20 characters and ~10 recent events each so the prompt fits.
+  const charRes = await query(
+    `SELECT id, name, description, personality, background, history,
+            contradiction_score, contradictions,
+            COALESCE(jsonb_array_length(history), 0) AS history_count
+       FROM characters
+      WHERE world_id = $1
+      ORDER BY history_count DESC NULLS LAST
+      LIMIT 20`,
+    [worldId]
+  );
+  const characters = charRes.rows;
+
+  // Early exit: empty world — nothing to be inconsistent about yet.
+  if (!w.lore && !w.setting && characters.length === 0) {
+    return { score: 0, contradictions: [] };
+  }
+
+  const contradictions: {
+    severity: 'minor' | 'moderate' | 'severe';
+    description: string;
+    evidence: string[];
+    source: string;
+  }[] = [];
+
+  // --- Signal B: aggregate member character scores ---
+  // Same weighting as user score. This is cheap and runs even if we skip the AI pass.
+  let charWeight = 0;
+  let charSum = 0;
+  for (const c of characters) {
+    const hc = parseInt(c.history_count) || 0;
+    const w_ = Math.min(1 + Math.floor(hc / 5), 5);
+    charWeight += w_;
+    charSum += (c.contradiction_score || 0) * w_;
+
+    // Surface the top character contradiction as a world-level signal so the breakdown
+    // actually shows these (instead of hiding them behind a single number).
+    const cs = Array.isArray(c.contradictions) ? c.contradictions : [];
+    for (const k of cs.slice(0, 2)) {
+      contradictions.push({
+        severity: (['minor', 'moderate', 'severe'].includes(k.severity) ? k.severity : 'minor') as any,
+        description: k.description,
+        evidence: Array.isArray(k.evidence) ? k.evidence : [],
+        source: `character:${c.id}:${c.name}`,
+      });
+    }
+  }
+  const charAggregateScore = charWeight > 0 ? charSum / charWeight : 0;
+
+  // --- Signal A: AI coherence check ---
+  // Skip the AI pass if the world is too empty to judge (no lore AND fewer than 2
+  // characters with canon). This also saves money on thousands of empty worlds.
+  const hasEnoughForAiPass =
+    (w.lore && w.lore.length > 50) ||
+    characters.filter((c) => (parseInt(c.history_count) || 0) >= 2).length >= 2;
+
+  let aiScore = 0;
+  if (hasEnoughForAiPass) {
+    const charBlocks = characters.map((c) => {
+      const hist = Array.isArray(c.history) ? c.history : [];
+      const recentHist = hist.slice(-8).map((h: any) => `   - ${h.event || '(?)'}`).join('\n');
+      const p = c.personality || {};
+      return `• ${c.name}${c.description ? ` — ${c.description}` : ''}
+   Traits: ${(p.traits || []).join(', ') || '(none)'}
+   Recent canon:
+${recentHist || '   (no canon yet)'}`;
+    }).join('\n\n');
+
+    const prompt = `You are a world-building consistency auditor for a shared roleplaying platform. Analyze the world "${w.name}" for INTERNAL CONTRADICTIONS between its established lore/rules and the canon events of characters who live there.
+
+--- WORLD ---
+Name: ${w.name}
+Setting: ${w.setting || '(none)'}
+Description: ${w.description || '(none)'}
+Lore: ${w.lore || '(none)'}
+Rules: ${typeof w.rules === 'object' ? JSON.stringify(w.rules) : w.rules || '(none)'}
+
+--- MEMBER CHARACTERS (up to 20, most-active first) ---
+${charBlocks || '(no member characters yet)'}
+
+Identify contradictions. Focus on:
+- Character canon events that violate the world's lore or rules (e.g. world says magic is extinct, but a canon event has a character casting spells)
+- Settings or timelines that don't add up across characters (e.g. two characters both claim to be the last surviving royal)
+- World rules that contradict themselves
+
+Respond with ONLY valid JSON:
+{
+  "contradictions": [
+    {
+      "severity": "minor" | "moderate" | "severe",
+      "description": "One-sentence summary of the contradiction",
+      "evidence": ["Quote/paraphrase from world lore", "Quote/paraphrase from conflicting character canon"]
+    }
+  ]
+}
+
+Only flag REAL contradictions. If the world is internally consistent, return { "contradictions": [] }.`;
+
+    const response = await getOpenAI().chat.completions.create({
+      model: AI_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1200,
+      temperature: 0.2,
+    });
+
+    const content = response.choices[0].message.content || '{"contradictions":[]}';
+    try {
+      const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed: { contradictions: { severity: string; description: string; evidence: string[] }[] } = JSON.parse(cleaned);
+
+      const weights: Record<string, number> = { minor: 1, moderate: 3, severe: 6 };
+      aiScore = (parsed.contradictions || []).reduce((sum, c) => sum + (weights[c.severity] || 1), 0);
+
+      for (const c of parsed.contradictions || []) {
+        contradictions.push({
+          severity: (['minor', 'moderate', 'severe'].includes(c.severity) ? c.severity : 'minor') as any,
+          description: c.description,
+          evidence: Array.isArray(c.evidence) ? c.evidence : [],
+          source: 'world-coherence',
+        });
+      }
+    } catch {
+      console.error('Failed to parse world contradiction analysis:', content);
+    }
+  }
+
+  // Final score: 70% AI coherence, 30% member aggregate. Rationale: the world's own
+  // lore being coherent is the stronger signal — one janky resident shouldn't trash
+  // an otherwise well-built world.
+  const score = Math.round(aiScore * 0.7 + charAggregateScore * 0.3);
+
+  // Sort contradictions by severity (severe first), cap at 15.
+  const sevRank: Record<string, number> = { severe: 3, moderate: 2, minor: 1 };
+  contradictions.sort((a, b) => (sevRank[b.severity] || 0) - (sevRank[a.severity] || 0));
+
+  return { score, contradictions: contradictions.slice(0, 15) };
+}
+
+/**
  * Summarize a campaign conversation into world-level canon events and character updates.
  * Used when a WorldMaster approves campaign results.
  *

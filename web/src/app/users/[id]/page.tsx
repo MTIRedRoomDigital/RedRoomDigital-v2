@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
+import { ConsistencyBadge, ConsistencyPanel, type Contradiction } from '@/components/ConsistencyBadge';
 
 interface PublicUser {
   id: string;
@@ -17,6 +18,9 @@ interface PublicUser {
   world_count: string;
   friend_count: string;
   characters: { id: string; name: string; avatar_url: string | null; description: string | null; tags: string[]; chat_count: number }[];
+  contradiction_score?: number;
+  contradictions?: Contradiction[];
+  contradictions_updated_at?: string | null;
 }
 
 interface FriendStatus {
@@ -36,6 +40,7 @@ export default function UserProfilePage() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [isBlockedBy, setIsBlockedBy] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [recalcBusy, setRecalcBusy] = useState(false);
 
   const isOwnProfile = user?.id === id;
 
@@ -166,6 +171,12 @@ export default function UserProfilePage() {
                 {profile.subscription}
               </span>
             )}
+            {profile.contradictions_updated_at && (
+              <ConsistencyBadge
+                score={profile.contradiction_score || 0}
+                tooltip={`Writer consistency — aggregated across ${profile.username}'s characters. Lower is better.`}
+              />
+            )}
           </div>
           {profile.bio ? (
             <p className="text-slate-400 text-sm">{profile.bio}</p>
@@ -229,6 +240,34 @@ export default function UserProfilePage() {
           <div className="text-xs text-slate-400">Friends</div>
         </div>
       </div>
+
+      {/* Consistency — only show if there are contradictions, or for own profile */}
+      {(isOwnProfile || (profile.contradictions && profile.contradictions.length > 0)) && (
+        <div className="mb-6">
+          <ConsistencyPanel
+            score={profile.contradiction_score || 0}
+            contradictions={profile.contradictions || []}
+            updatedAt={profile.contradictions_updated_at || null}
+            kind="user"
+            onRecalc={
+              isOwnProfile
+                ? async () => {
+                    setRecalcBusy(true);
+                    const res = await api.post(`/api/users/recalc-contradictions`, {});
+                    if (res.success) {
+                      const fresh = await api.get<PublicUser>(`/api/users/${id}/public`);
+                      if (fresh.success && fresh.data) setProfile(fresh.data as any);
+                    } else {
+                      alert((res as any).message || 'Failed to recalculate');
+                    }
+                    setRecalcBusy(false);
+                  }
+                : undefined
+            }
+            recalcBusy={recalcBusy}
+          />
+        </div>
+      )}
 
       {/* Characters */}
       <h2 className="text-lg font-semibold text-white mb-3">Characters</h2>

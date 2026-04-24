@@ -174,6 +174,22 @@ const SECTIONS: Section[] = [
           It&apos;s not a punishment — some characters are <em>supposed</em> to be chaotic. It
           just tells other players what to expect.
         </p>
+        <div className="border-t border-slate-800 mt-4 pt-4 space-y-2">
+          <p>
+            <strong className="text-white">Writers and Worlds have scores too.</strong>
+          </p>
+          <p className="text-sm text-slate-300">
+            A <strong>writer&apos;s score</strong> is rolled up from all their characters — weighted
+            by how developed each one is. It tells other players whether this person tends to
+            keep their canon straight.
+          </p>
+          <p className="text-sm text-slate-300">
+            A <strong>world&apos;s score</strong> combines two things: an AI pass that checks
+            whether the world&apos;s lore, rules, and member characters actually fit together,
+            plus the aggregate consistency of the characters who live there. Public to everyone
+            — so a world with a messy score is a warning before you join.
+          </p>
+        </div>
       </>
     ),
   },

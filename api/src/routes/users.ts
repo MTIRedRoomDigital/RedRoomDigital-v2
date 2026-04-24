@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { getUserStatus } from '../services/presence';
+import { recalcUserContradictions } from './conversations';
 
 export const userRouter = Router();
 
@@ -14,7 +15,7 @@ userRouter.get('/profile', authenticate, async (req: AuthRequest, res: Response)
   try {
     const user = await query(
       `SELECT id, username, email, avatar_url, bio, role, subscription,
-              kayfabe_strikes, created_at
+              kayfabe_strikes, contradiction_score, contradictions, contradictions_updated_at, created_at
        FROM users WHERE id = $1`,
       [req.user!.id]
     );
@@ -176,6 +177,7 @@ userRouter.get('/:id/public', async (req, res: Response) => {
   try {
     const user = await query(
       `SELECT id, username, avatar_url, bio, subscription, created_at,
+              contradiction_score, contradictions, contradictions_updated_at,
               (SELECT COUNT(*) FROM characters WHERE creator_id = users.id AND is_public = TRUE) AS character_count,
               (SELECT COUNT(*) FROM worlds WHERE creator_id = users.id AND is_public = TRUE) AS world_count,
               (SELECT COUNT(*) FROM friendships
@@ -227,6 +229,22 @@ userRouter.get('/characters', authenticate, async (req: AuthRequest, res: Respon
 
     res.json({ success: true, data: result.rows });
   } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/users/recalc-contradictions
+ * Manually trigger a contradiction recalculation for the current user.
+ * The user score is a cheap weighted aggregate of their characters — no AI cost —
+ * so there's no cooldown. Useful after editing a character's canon.
+ */
+userRouter.post('/recalc-contradictions', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    await recalcUserContradictions(req.user!.id);
+    res.json({ success: true, message: 'Recalculated' });
+  } catch (error: any) {
+    console.error('User recalc error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
