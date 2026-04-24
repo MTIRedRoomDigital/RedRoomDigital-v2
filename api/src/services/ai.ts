@@ -74,7 +74,7 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
 
   // Get conversation context
   const convResult = await query(
-    'SELECT context, world_id, location_id FROM conversations WHERE id = $1',
+    'SELECT context, world_id, location_id, chat_mode FROM conversations WHERE id = $1',
     [conversationId]
   );
   const conv = convResult.rows[0];
@@ -90,6 +90,12 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
     sections.push(`\nWho you are: ${char.description}`);
   }
 
+  // === TAGS (compressed vibe signal) ===
+  const tags = Array.isArray(char.tags) ? char.tags : [];
+  if (tags.length > 0) {
+    sections.push(`\nVibe tags: ${tags.join(', ')}`);
+  }
+
   // === PERSONALITY ===
   if (personality.traits?.length || personality.values?.length || personality.flaws?.length) {
     sections.push('\n--- PERSONALITY ---');
@@ -102,6 +108,13 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
     if (personality.flaws?.length) {
       sections.push(`Your flaws and weaknesses: ${personality.flaws.join(', ')}`);
     }
+  }
+
+  // === HOW YOU SPEAK (writing style / voice) ===
+  if (personality.speaking_style) {
+    sections.push('\n--- HOW YOU SPEAK ---');
+    sections.push(personality.speaking_style);
+    sections.push('Match this voice in every message. Word choice, rhythm, and sentence length should feel unmistakably like you.');
   }
 
   // === LIKES & DISLIKES ===
@@ -148,6 +161,37 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
       if (rel.description) line += ` — ${rel.description}`;
       sections.push(line);
     });
+  }
+
+  // === CONTRADICTION GUARDRAIL ===
+  // Feed back detected inconsistencies so the AI avoids reinforcing them in new replies.
+  const contradictions = Array.isArray(char.contradictions) ? char.contradictions : [];
+  if (contradictions.length > 0) {
+    // Rank by severity; surface the worst 5.
+    const severityRank: Record<string, number> = { severe: 3, moderate: 2, minor: 1 };
+    const topContradictions = [...contradictions]
+      .sort((a: any, b: any) => (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0))
+      .slice(0, 5);
+
+    sections.push('\n--- KNOWN INCONSISTENCIES (DO NOT REINFORCE) ---');
+    sections.push(
+      `Your canon has previously been flagged for the following contradictions. ` +
+      `Do NOT act in ways that deepen them. When in doubt, lean on your established personality, values, and earlier history.`
+    );
+    topContradictions.forEach((c: any) => {
+      sections.push(`- [${c.severity || 'minor'}] ${c.description}`);
+    });
+
+    const score = char.contradiction_score || 0;
+    if (score >= 7) {
+      sections.push(
+        `Your current contradiction score is ${score} (high). Be conservative — avoid introducing major new traits, abilities, or relationships unless they directly resolve an existing inconsistency.`
+      );
+    } else if (score >= 3) {
+      sections.push(
+        `Your current contradiction score is ${score}. Stay close to established canon.`
+      );
+    }
   }
 
   // === WORLD CONTEXT (if chatting "Within World") ===
@@ -205,10 +249,48 @@ async function buildCharacterPrompt(characterId: string, conversationId: string)
   sections.push('- Keep responses between 1-4 paragraphs depending on context');
   sections.push('- NEVER break character or reference being AI/fictional');
 
+  // === CHAT MODE NUANCE ===
+  // `ai` = the human owner has opted fully into AI play. Be expressive.
+  // `ai_fallback` = the human owner is temporarily offline. Act as a responsible stand-in —
+  //   don't commit the character to anything the owner can't walk back (romance declarations,
+  //   lethal decisions, world-altering reveals, permanent allegiances).
+  if (conv.chat_mode === 'ai_fallback') {
+    sections.push('\n--- STAND-IN MODE ---');
+    sections.push(
+      'Your owner is briefly away and you are holding the scene for them. Keep the story moving and engaging, ' +
+      'but AVOID making irreversible commitments on their behalf: no love confessions, no blood oaths, ' +
+      'no killing major figures, no permanent alliances, no revealing deep secrets. Prefer open-ended replies ' +
+      'that leave space for the owner to step back in and steer.'
+    );
+  } else if (conv.chat_mode === 'ai') {
+    sections.push('\n--- FULL-AI MODE ---');
+    sections.push(
+      'Your owner has set this chat to full AI — play the character expressively and let the scene breathe. ' +
+      'Significant events here are fair game for canon if both players agree.'
+    );
+  }
+
+  // === CONTEXT TYPE NUANCE ===
   if (conv.context === 'vacuum') {
-    sections.push('- This is a "vacuum" chat — no specific world rules apply, but stay in character');
+    sections.push('\n--- VACUUM SCENE ---');
+    sections.push(
+      'This is a vacuum chat: it exists outside your world and outside canon by default. You can engage freely, ' +
+      'experiment, and be playful. Nothing here becomes part of your history unless both players explicitly agree.'
+    );
   } else if (conv.context === 'multiverse') {
-    sections.push('- This is a "multiverse" chat — characters from different worlds can interact');
+    sections.push('\n--- MULTIVERSE ENCOUNTER ---');
+    sections.push(
+      'The other character is NOT from your world. Their lore, technology, magic, and culture may be completely ' +
+      'unfamiliar to you. React as your character genuinely would — curious, confused, skeptical, or defensive. ' +
+      'Do NOT pretend to recognize their world, people, or customs you have no reason to know. Ask, observe, or ' +
+      'assume based on YOUR world, not theirs.'
+    );
+  } else if (conv.context === 'within_world') {
+    sections.push('\n--- WITHIN-WORLD SCENE ---');
+    sections.push(
+      'This scene takes place inside your established world. The world rules, lore, and locations above are ' +
+      'ground truth — you MUST respect them. If a world rule conflicts with what feels natural, the world rule wins.'
+    );
   }
 
   return sections.join('\n');
@@ -284,13 +366,19 @@ export async function summarizeForCanon(
   events: { event: string; impact: string }[];
   relationships: { characterName: string; characterId: string; type: string; description: string; strengthChange: number }[];
 }> {
-  // Get character info
+  // Get character info + existing canon so the summarizer doesn't duplicate or contradict.
   const charResult = await query(
-    'SELECT name FROM characters WHERE id = $1',
+    'SELECT name, history FROM characters WHERE id = $1',
     [characterId]
   );
   if (charResult.rows.length === 0) throw new Error('Character not found');
   const charName = charResult.rows[0].name;
+  const existingHistory = Array.isArray(charResult.rows[0].history) ? charResult.rows[0].history : [];
+  // Surface the most recent 15 canon events — oldest backstory is less likely to be duplicated.
+  const recentCanonLines = existingHistory
+    .slice(-15)
+    .map((h: any, i: number) => `${i + 1}. ${h.event}${h.impact ? ` (impact: ${h.impact})` : ''}`)
+    .join('\n');
 
   // Get messages in the conversation (optionally only messages AFTER a given marker)
   const messages = await query(
@@ -330,7 +418,10 @@ export async function summarizeForCanon(
 
 CONVERSATION PARTICIPANTS (other than ${charName}): ${partnerInfo}
 
-CONVERSATION:
+${recentCanonLines ? `${charName}'S EXISTING CANON (recent events — do NOT duplicate these; flag in your output if the new chat contradicts any of them by wording the event to explicitly acknowledge the tension):
+${recentCanonLines}
+
+` : ''}CONVERSATION:
 ${chatLog}
 
 Respond with ONLY valid JSON in this exact format:
@@ -345,6 +436,8 @@ Respond with ONLY valid JSON in this exact format:
 
 Rules:
 - Extract 1-4 key events that would be meaningful to ${charName}'s story
+- DO NOT restate events that already exist in ${charName}'s canon above
+- If the new chat contradicts existing canon, phrase the event to name the contradiction (e.g. "Despite previously vowing to never use magic, ${charName} cast a spell when cornered")
 - For relationships: strengthChange should be -20 to +20 based on how the interaction went
 - Only include relationship entries for characters who actually interacted
 - Keep descriptions concise (1 sentence each)
