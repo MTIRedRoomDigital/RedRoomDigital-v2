@@ -11,7 +11,7 @@
  * On submit, posts to /api/campaigns and redirects to the new campaign page.
  */
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -24,7 +24,18 @@ interface OwnedWorld {
   setting: string | null;
 }
 
+// Next.js 15 requires useSearchParams() to live inside a Suspense boundary or
+// the page can't be prerendered. We split the inner component out and wrap it
+// at the page export.
 export default function CreateCampaignPage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl mx-auto px-4 py-8 text-slate-400">Loading…</div>}>
+      <CreateCampaignInner />
+    </Suspense>
+  );
+}
+
+function CreateCampaignInner() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
