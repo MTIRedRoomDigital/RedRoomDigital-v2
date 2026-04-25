@@ -24,6 +24,7 @@ export default function CreateWorldPage() {
   const [techLevel, setTechLevel] = useState('');
   const [customRules, setCustomRules] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [joinMode, setJoinMode] = useState<'open' | 'locked'>('open');
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function CreateWorldPage() {
       lore: lore.trim() || null,
       rules: Object.keys(rules).length > 0 ? rules : null,
       is_public: isPublic,
+      is_nsfw: isNsfw,
       join_mode: joinMode,
       banner_url: bannerUrl,
       thumbnail_url: thumbnailUrl,
@@ -65,6 +67,10 @@ export default function CreateWorldPage() {
     setSubmitting(false);
 
     if (res.success && res.data) {
+      const mod = (res as any).moderation;
+      if (mod?.auto_flagged) {
+        alert(`Heads up: your world was auto-classified as NSFW and saved as private.\n\nReason: ${mod.reason}\n\nYou can edit and try again if this was wrong.`);
+      }
       router.push(`/worlds/${(res.data as any).id}`);
     } else {
       setError(res.message || 'Failed to create world');
@@ -332,6 +338,32 @@ export default function CreateWorldPage() {
                 </label>
               </div>
             )}
+
+            {/* NSFW self-flag */}
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              isNsfw ? 'bg-rose-950/30 border-rose-800/50' : 'bg-slate-800 border-slate-700'
+            }`}>
+              <div>
+                <h4 className="text-white font-medium flex items-center gap-2">
+                  Adult content (18+) <span className="text-xs">🔞</span>
+                </h4>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  Marks this world as NSFW. Won&apos;t appear in public browse — but you and members can still use it.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isNsfw}
+                  onChange={(e) => {
+                    setIsNsfw(e.target.checked);
+                    if (e.target.checked) setIsPublic(false);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600" />
+              </label>
+            </div>
 
             {/* Summary card */}
             <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg">

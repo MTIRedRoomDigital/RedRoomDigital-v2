@@ -1154,3 +1154,82 @@ export async function resetLearnedSpeakingStyle(characterId: string): Promise<vo
     [characterId]
   );
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Content moderation
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Classify whether a piece of authored content (character, world, campaign)
+ * contains adult/NSFW material. Used at the public-publish boundary so we
+ * can keep the public face of the site SFW while still allowing private use.
+ *
+ * Threshold: we err on the side of allowing publication. Mild romance,
+ * implied violence, dark themes, mature topics — all SFW. We flag explicit
+ * sexual content, graphic gore, sexual content involving minors (always),
+ * and content whose primary purpose is sexual gratification.
+ *
+ * Returns { is_nsfw, reason }. Reason is short and shown to the owner so
+ * they can fix the content if they think we got it wrong.
+ *
+ * Cost: one cheap call (max_tokens: 200), only fires on the public toggle —
+ * not on every save. Safe to call from request paths.
+ */
+export async function classifyContent(
+  kind: 'character' | 'world' | 'campaign',
+  text: string
+): Promise<{ is_nsfw: boolean; reason: string }> {
+  // Trim to ~6000 chars — plenty for a character/world/campaign and keeps cost bounded.
+  const snippet = (text || '').slice(0, 6000).trim();
+  if (snippet.length < 20) {
+    return { is_nsfw: false, reason: 'Too little content to classify.' };
+  }
+
+  const prompt = `You are a content classifier for a 13+ social roleplaying platform. Decide whether this ${kind} can appear in PUBLIC listings (browse pages, search, recommendations) where strangers including teens may see it.
+
+ALLOWED in public (SFW):
+- Mild romance, kissing, attraction
+- Implied violence, action scenes, dark themes
+- Mature topics handled tastefully (death, addiction, mental health)
+- Edgy personalities, antiheroes, morally grey characters
+- Horror, suspense, gore that serves the story
+
+NOT ALLOWED in public (NSFW):
+- Explicit sexual content or detailed sexual descriptions
+- Sexual content whose primary purpose is gratification
+- Graphic torture or gore for its own sake
+- Sexual content involving minors (NEVER allowed anywhere — flag and refuse)
+- Slurs targeting protected groups, hate-speech promotion
+
+CONTENT:
+"""
+${snippet}
+"""
+
+Respond with ONLY valid JSON:
+{ "is_nsfw": true | false, "reason": "one short sentence" }
+
+If you're unsure, prefer is_nsfw: false unless there's clear explicit content. Only flag content that genuinely fails the public-SFW bar.`;
+
+  try {
+    const response = await getOpenAI().chat.completions.create({
+      model: AI_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 200,
+      temperature: 0.1,
+    });
+    const raw = response.choices[0].message.content || '{"is_nsfw":false,"reason":""}';
+    const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    return {
+      is_nsfw: !!parsed.is_nsfw,
+      reason: String(parsed.reason || '').slice(0, 240),
+    };
+  } catch (e: any) {
+    // Fail-open: if the moderation call itself fails, don't block the user.
+    // Worst case is something gets published that should've been flagged;
+    // a user report can catch it. Better than blocking everyone on AI downtime.
+    console.error('classifyContent failed:', e?.message);
+    return { is_nsfw: false, reason: 'Moderation check unavailable.' };
+  }
+}

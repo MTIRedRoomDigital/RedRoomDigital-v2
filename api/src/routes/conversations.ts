@@ -189,6 +189,13 @@ conversationRouter.get('/public', async (req: Request, res: Response) => {
        FROM conversations c
        LEFT JOIN worlds w ON c.world_id = w.id
        WHERE c.is_public = TRUE
+         -- Hide public chats whose any participant character is NSFW. SFW
+         -- requirement applies to anything strangers can browse.
+         AND NOT EXISTS (
+           SELECT 1 FROM conversation_participants cp2
+           JOIN characters ch2 ON cp2.character_id = ch2.id
+           WHERE cp2.conversation_id = c.id AND ch2.is_nsfw = TRUE
+         )
        ORDER BY c.updated_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
@@ -1885,6 +1892,23 @@ conversationRouter.post('/:id/public-request', authenticate, async (req: AuthReq
     }
     if (convCheck.rows[0].public_requested_by) {
       res.status(400).json({ success: false, message: 'A public request is already pending' });
+      return;
+    }
+
+    // SFW gate: any participant character marked NSFW blocks publication.
+    // We check up-front rather than silently hiding from the feed so the user
+    // gets clear feedback that they need to fix the character first.
+    const nsfwCheck = await query(
+      `SELECT 1 FROM conversation_participants cp
+       JOIN characters c ON cp.character_id = c.id
+       WHERE cp.conversation_id = $1 AND c.is_nsfw = TRUE LIMIT 1`,
+      [conversationId]
+    );
+    if (nsfwCheck.rows.length > 0) {
+      res.status(400).json({
+        success: false,
+        message: 'One of the characters in this chat is marked NSFW. Public chats must be SFW — only the public-facing parts of the site are moderated.',
+      });
       return;
     }
 

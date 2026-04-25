@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [birthdate, setBirthdate] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,9 +36,24 @@ export default function RegisterPage() {
       setError('Username must be at least 3 characters');
       return;
     }
+    if (!birthdate) {
+      setError('Please enter your birthdate');
+      return;
+    }
+    // Client-side age check — server enforces too. Keep them in sync.
+    const dob = new Date(birthdate);
+    const ageYears = (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    if (isNaN(ageYears)) {
+      setError('Invalid birthdate');
+      return;
+    }
+    if (ageYears < 13) {
+      setError('You must be at least 13 years old to use RedRoom.');
+      return;
+    }
 
     setLoading(true);
-    const result = await register(username, email, password);
+    const result = await register(username, email, password, birthdate);
     setLoading(false);
 
     if (result.success) {
@@ -159,6 +175,24 @@ export default function RegisterPage() {
               required
               className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors"
             />
+          </div>
+
+          <div>
+            <label htmlFor="birthdate" className="block text-sm font-medium text-slate-300 mb-1">
+              Birthdate
+            </label>
+            <input
+              id="birthdate"
+              type="date"
+              value={birthdate}
+              onChange={(e) => setBirthdate(e.target.value)}
+              required
+              max={new Date(Date.now() - 13 * 365.25 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+              className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              You must be at least 13 to use RedRoom. We use this to apply the right content rules — we don&apos;t share it.
+            </p>
           </div>
 
           <button

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
 import { learnSpeakingStyle, resetLearnedSpeakingStyle, previewVoice } from '../services/ai';
+import { checkPublishable, buildCharacterText } from '../services/moderation';
 
 export const characterRouter = Router();
 
@@ -19,7 +20,9 @@ characterRouter.get('/', async (req: Request, res: Response) => {
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
 
-    let whereClause = 'WHERE c.is_public = true';
+    // Public listing must be SFW. NSFW characters can still be used privately
+    // and reached via direct URL by their owner, but they don't appear in browse.
+    let whereClause = 'WHERE c.is_public = true AND c.is_nsfw = false';
     const params: unknown[] = [];
 
     if (search) {
@@ -138,6 +141,7 @@ characterRouter.post('/', authenticate, async (req: AuthRequest, res: Response) 
     const {
       name, description, avatar_url, personality, background,
       likes, dislikes, world_id, is_public, is_ai_enabled, tags,
+      is_nsfw,
     } = req.body;
 
     if (!name) {
@@ -145,22 +149,45 @@ characterRouter.post('/', authenticate, async (req: AuthRequest, res: Response) 
       return;
     }
 
+    // Moderation gate: only fires if the user wants this public AND has not
+    // self-flagged it as NSFW. Self-flagged content skips the AI scan because
+    // the user has already opted out of public listings.
+    let finalIsPublic = is_public !== false;
+    let finalIsNsfw = !!is_nsfw;
+    let moderationFlag: string | null = null;
+
+    if (finalIsPublic && !finalIsNsfw) {
+      const text = buildCharacterText({
+        name, description, personality, background, likes, dislikes, tags,
+      });
+      const mod = await checkPublishable('character', text);
+      if (mod.flagged) {
+        finalIsPublic = false;
+        finalIsNsfw = true;
+        moderationFlag = mod.reason;
+      }
+    }
+
     const result = await query(
       `INSERT INTO characters
         (creator_id, name, description, avatar_url, personality, background,
-         likes, dislikes, world_id, is_public, is_ai_enabled, tags)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         likes, dislikes, world_id, is_public, is_ai_enabled, tags, is_nsfw)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING *`,
       [
         userId, name, description || null, avatar_url || null,
         JSON.stringify(personality || {}), background || null,
         JSON.stringify(likes || []), JSON.stringify(dislikes || []),
-        world_id || null, is_public !== false, is_ai_enabled !== false,
-        tags || [],
+        world_id || null, finalIsPublic, is_ai_enabled !== false,
+        tags || [], finalIsNsfw,
       ]
     );
 
-    res.status(201).json({ success: true, data: result.rows[0] });
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      moderation: moderationFlag ? { auto_flagged: true, reason: moderationFlag } : undefined,
+    });
   } catch (error: any) {
     console.error('Create character error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -189,10 +216,54 @@ characterRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response
       return;
     }
 
+    // Re-pull the full row so we can fall back to existing fields when running
+    // moderation on a partial update.
+    const fullRes = await query('SELECT * FROM characters WHERE id = $1', [req.params.id]);
+    const current = fullRes.rows[0];
+
     const {
       name, description, avatar_url, personality, background,
       likes, dislikes, world_id, is_public, is_ai_enabled, tags,
+      is_nsfw,
     } = req.body;
+
+    // Moderation gate fires if the user is asking to be public (or already is)
+    // and has NOT self-flagged as NSFW. We only re-scan when content actually
+    // changed or is_public was just turned on — otherwise we'd burn tokens on
+    // every metadata save.
+    const wantsPublic = is_public !== undefined ? is_public : current.is_public;
+    const selfFlaggedNsfw = is_nsfw !== undefined ? is_nsfw : current.is_nsfw;
+    const transitioningToPublic = wantsPublic && !current.is_public;
+    const contentChanged =
+      (name !== undefined && name !== current.name) ||
+      (description !== undefined && description !== current.description) ||
+      personality !== undefined ||
+      (background !== undefined && background !== current.background) ||
+      likes !== undefined ||
+      dislikes !== undefined ||
+      tags !== undefined;
+
+    let finalIsPublic = wantsPublic;
+    let finalIsNsfw = selfFlaggedNsfw;
+    let moderationFlag: string | null = null;
+
+    if (wantsPublic && !selfFlaggedNsfw && (transitioningToPublic || contentChanged)) {
+      const text = buildCharacterText({
+        name: name ?? current.name,
+        description: description ?? current.description,
+        personality: personality ?? current.personality,
+        background: background ?? current.background,
+        likes: likes ?? current.likes,
+        dislikes: dislikes ?? current.dislikes,
+        tags: tags ?? current.tags,
+      });
+      const mod = await checkPublishable('character', text);
+      if (mod.flagged) {
+        finalIsPublic = false;
+        finalIsNsfw = true;
+        moderationFlag = mod.reason;
+      }
+    }
 
     const result = await query(
       `UPDATE characters SET
@@ -204,9 +275,10 @@ characterRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response
         likes = COALESCE($6, likes),
         dislikes = COALESCE($7, dislikes),
         world_id = $8,
-        is_public = COALESCE($9, is_public),
+        is_public = $9,
         is_ai_enabled = COALESCE($10, is_ai_enabled),
-        tags = COALESCE($11, tags)
+        tags = COALESCE($11, tags),
+        is_nsfw = $13
        WHERE id = $12
        RETURNING *`,
       [
@@ -215,12 +287,17 @@ characterRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response
         background,
         likes ? JSON.stringify(likes) : null,
         dislikes ? JSON.stringify(dislikes) : null,
-        world_id, is_public, is_ai_enabled, tags,
+        world_id, finalIsPublic, is_ai_enabled, tags,
         req.params.id,
+        finalIsNsfw,
       ]
     );
 
-    res.json({ success: true, data: result.rows[0] });
+    res.json({
+      success: true,
+      data: result.rows[0],
+      moderation: moderationFlag ? { auto_flagged: true, reason: moderationFlag } : undefined,
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, message: 'Server error' });
   }

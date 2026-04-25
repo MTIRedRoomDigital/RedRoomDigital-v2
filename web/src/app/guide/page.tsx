@@ -218,6 +218,55 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: 'content-rules',
+    title: 'Content rules',
+    icon: '🛡️',
+    blurb: 'What\'s allowed in public, and what\'s yours alone.',
+    body: (
+      <>
+        <p>
+          RedRoom is <strong>13+</strong>. The <strong>public-facing</strong> parts of the
+          site — browse pages, search, recommendations, public chats — must be{' '}
+          <strong>SFW</strong> (safe for work). What you do in private chats with another
+          consenting writer is your business.
+        </p>
+        <p>
+          When you create a character, world, or campaign, an AI scans it for adult content
+          if you mark it public. If the content is too explicit for the public face of the
+          site, it gets auto-flagged as <span className="inline-block px-1.5 py-0.5 bg-rose-900/40 text-rose-300 rounded text-xs">🔞 NSFW</span> and removed from public listings.
+          You can still use it privately.
+        </p>
+        <p>
+          You can also self-flag content as NSFW any time — useful when you know it
+          won&apos;t pass the public bar and you don&apos;t want the AI scan to bother you.
+        </p>
+        <div className="border-t border-slate-800 mt-4 pt-4 space-y-2 text-sm">
+          <p className="text-white font-semibold">SFW (allowed in public)</p>
+          <ul className="list-disc list-inside text-slate-400 space-y-1">
+            <li>Mild romance, kissing, attraction</li>
+            <li>Implied violence, action, dark themes</li>
+            <li>Mature topics handled tastefully</li>
+            <li>Edgy personalities, antiheroes, morally grey characters</li>
+          </ul>
+          <p className="text-white font-semibold mt-3">NSFW (private only)</p>
+          <ul className="list-disc list-inside text-slate-400 space-y-1">
+            <li>Explicit sexual content</li>
+            <li>Graphic gore for its own sake</li>
+          </ul>
+          <p className="text-white font-semibold mt-3">Never allowed (anywhere)</p>
+          <ul className="list-disc list-inside text-rose-300 space-y-1">
+            <li>Sexual content involving minors</li>
+            <li>Targeted hate speech or slurs against protected groups</li>
+            <li>Real-world threats or doxxing</li>
+          </ul>
+          <p className="text-slate-500 text-xs mt-3">
+            See the <Link href="/guidelines" className="text-amber-400 hover:text-amber-300">Community Guidelines</Link> for the full list.
+          </p>
+        </div>
+      </>
+    ),
+  },
+  {
     id: 'campaigns',
     title: 'Campaigns',
     icon: '⚔️',

@@ -129,14 +129,14 @@ userRouter.get('/search', async (req: Request, res: Response) => {
       query(
         `SELECT c.id, c.name, c.description, c.avatar_url, c.tags, u.username AS creator_name
          FROM characters c JOIN users u ON c.creator_id = u.id
-         WHERE c.is_public = TRUE AND (c.name ILIKE $1 OR c.description ILIKE $1)
+         WHERE c.is_public = TRUE AND c.is_nsfw = FALSE AND (c.name ILIKE $1 OR c.description ILIKE $1)
          ORDER BY c.chat_count DESC LIMIT 10`,
         [searchTerm]
       ),
       query(
         `SELECT w.id, w.name, w.description, w.setting, u.username AS creator_name
          FROM worlds w JOIN users u ON w.creator_id = u.id
-         WHERE w.is_public = TRUE AND (w.name ILIKE $1 OR w.description ILIKE $1)
+         WHERE w.is_public = TRUE AND w.is_nsfw = FALSE AND (w.name ILIKE $1 OR w.description ILIKE $1)
          ORDER BY w.member_count DESC LIMIT 10`,
         [searchTerm]
       ),

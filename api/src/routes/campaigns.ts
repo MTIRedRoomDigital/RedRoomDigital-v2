@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { createNotification } from '../services/notifications';
 import { summarizeForWorldCanon } from '../services/ai';
 import { recalcWorldContradictions } from './conversations';
+import { checkPublishable, buildCampaignText } from '../services/moderation';
 
 export const campaignRouter = Router();
 
@@ -146,24 +147,35 @@ campaignRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       return;
     }
 
+    // Moderation: campaigns inherit their world's privacy but can be flagged
+    // independently. AI-flagged campaigns get is_nsfw=true; the world page
+    // shows the badge to the WorldMaster.
+    const modText = buildCampaignText({ name, description, premise });
+    const mod = await checkPublishable('campaign', modText);
+    const isNsfw = mod.flagged;
+
     const sortResult = await query(
       'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM campaigns WHERE world_id = $1',
       [world_id]
     );
 
     const result = await query(
-      `INSERT INTO campaigns (world_id, creator_id, name, description, premise, max_participants, min_participants, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO campaigns (world_id, creator_id, name, description, premise, max_participants, min_participants, sort_order, is_nsfw)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         world_id, userId, name, description || null, premise || null,
         max_participants || 6, min_participants || 2,
-        sortResult.rows[0].next_order,
+        sortResult.rows[0].next_order, isNsfw,
       ]
     );
 
     kickWorldRecalc(world_id);
-    res.status(201).json({ success: true, data: result.rows[0] });
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      moderation: mod.flagged ? { auto_flagged: true, reason: mod.reason } : undefined,
+    });
   } catch (error: any) {
     console.error('Create campaign error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -189,7 +201,29 @@ campaignRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response)
       return;
     }
 
-    const { name, description, premise, status, max_participants, min_participants } = req.body;
+    const { name, description, premise, status, max_participants, min_participants, is_nsfw } = req.body;
+
+    // Re-scan if user-facing content changed.
+    const fullRes = await query('SELECT * FROM campaigns WHERE id = $1', [req.params.id]);
+    const current = fullRes.rows[0];
+    const contentChanged =
+      (name !== undefined && name !== current.name) ||
+      (description !== undefined && description !== current.description) ||
+      (premise !== undefined && premise !== current.premise);
+
+    let finalIsNsfw = is_nsfw !== undefined ? !!is_nsfw : current.is_nsfw;
+    let moderationFlag: string | null = null;
+    if (contentChanged && !finalIsNsfw) {
+      const mod = await checkPublishable('campaign', buildCampaignText({
+        name: name ?? current.name,
+        description: description ?? current.description,
+        premise: premise ?? current.premise,
+      }));
+      if (mod.flagged) {
+        finalIsNsfw = true;
+        moderationFlag = mod.reason;
+      }
+    }
 
     const result = await query(
       `UPDATE campaigns SET
@@ -199,14 +233,19 @@ campaignRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response)
         status = COALESCE($4, status),
         max_participants = COALESCE($5, max_participants),
         min_participants = COALESCE($6, min_participants),
+        is_nsfw = $8,
         updated_at = NOW()
        WHERE id = $7
        RETURNING *`,
-      [name, description, premise, status, max_participants, min_participants, req.params.id]
+      [name, description, premise, status, max_participants, min_participants, req.params.id, finalIsNsfw]
     );
 
     kickWorldRecalc(campaign.rows[0].world_id);
-    res.json({ success: true, data: result.rows[0] });
+    res.json({
+      success: true,
+      data: result.rows[0],
+      moderation: moderationFlag ? { auto_flagged: true, reason: moderationFlag } : undefined,
+    });
   } catch (error: any) {
     console.error('Update campaign error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });

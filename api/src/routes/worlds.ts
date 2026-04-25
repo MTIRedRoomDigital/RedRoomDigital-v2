@@ -3,6 +3,7 @@ import { query } from '../db/pool';
 import { authenticate, AuthRequest, requireSubscription } from '../middleware/auth';
 import { createNotification } from '../services/notifications';
 import { recalcWorldContradictions } from './conversations';
+import { checkPublishable, buildWorldText } from '../services/moderation';
 
 export const worldRouter = Router();
 
@@ -20,7 +21,8 @@ worldRouter.get('/', async (req: Request, res: Response) => {
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
 
-    let whereClause = 'WHERE w.is_public = true';
+    // Public listing must be SFW. NSFW worlds can still be used privately.
+    let whereClause = 'WHERE w.is_public = true AND w.is_nsfw = false';
     const params: unknown[] = [];
 
     if (search) {
@@ -176,18 +178,32 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
       return;
     }
 
-    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode, is_nsfw } = req.body;
 
     if (!name) {
       res.status(400).json({ success: false, message: 'World name is required' });
       return;
     }
 
+    // Moderation gate (see characters.ts for the full rationale)
+    let finalIsPublic = is_public !== false;
+    let finalIsNsfw = !!is_nsfw;
+    let moderationFlag: string | null = null;
+    if (finalIsPublic && !finalIsNsfw) {
+      const text = buildWorldText({ name, description, setting, lore, rules });
+      const mod = await checkPublishable('world', text);
+      if (mod.flagged) {
+        finalIsPublic = false;
+        finalIsNsfw = true;
+        moderationFlag = mod.reason;
+      }
+    }
+
     const result = await query(
-      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode, is_nsfw)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [userId, name, description, lore, JSON.stringify(rules || {}), setting, is_public !== false, banner_url || null, thumbnail_url || null, join_mode || 'open']
+      [userId, name, description, lore, JSON.stringify(rules || {}), setting, finalIsPublic, banner_url || null, thumbnail_url || null, join_mode || 'open', finalIsNsfw]
     );
 
     // Auto-add creator as WorldMaster
@@ -202,7 +218,11 @@ worldRouter.post('/', authenticate, requireSubscription('premium'), async (req: 
       [result.rows[0].id]
     );
 
-    res.status(201).json({ success: true, data: result.rows[0] });
+    res.status(201).json({
+      success: true,
+      data: result.rows[0],
+      moderation: moderationFlag ? { auto_flagged: true, reason: moderationFlag } : undefined,
+    });
   } catch (error: any) {
     console.error('Create world error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -242,7 +262,40 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
       }
     }
 
-    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode, is_nsfw } = req.body;
+
+    // Moderation gate — re-scan only when content changed or transitioning to public
+    const fullRes = await query('SELECT * FROM worlds WHERE id = $1', [worldId]);
+    const current = fullRes.rows[0];
+    const wantsPublic = is_public !== undefined ? is_public : current.is_public;
+    const selfFlaggedNsfw = is_nsfw !== undefined ? is_nsfw : current.is_nsfw;
+    const transitioningToPublic = wantsPublic && !current.is_public;
+    const contentChanged =
+      (name !== undefined && name !== current.name) ||
+      (description !== undefined && description !== current.description) ||
+      (lore !== undefined && lore !== current.lore) ||
+      rules !== undefined ||
+      (setting !== undefined && setting !== current.setting);
+
+    let finalIsPublic = wantsPublic;
+    let finalIsNsfw = selfFlaggedNsfw;
+    let moderationFlag: string | null = null;
+
+    if (wantsPublic && !selfFlaggedNsfw && (transitioningToPublic || contentChanged)) {
+      const text = buildWorldText({
+        name: name ?? current.name,
+        description: description ?? current.description,
+        setting: setting ?? current.setting,
+        lore: lore ?? current.lore,
+        rules: rules ?? current.rules,
+      });
+      const mod = await checkPublishable('world', text);
+      if (mod.flagged) {
+        finalIsPublic = false;
+        finalIsNsfw = true;
+        moderationFlag = mod.reason;
+      }
+    }
 
     const result = await query(
       `UPDATE worlds SET
@@ -251,16 +304,21 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
         lore = COALESCE($3, lore),
         rules = COALESCE($4, rules),
         setting = COALESCE($5, setting),
-        is_public = COALESCE($6, is_public),
+        is_public = $6,
         banner_url = COALESCE($7, banner_url),
         thumbnail_url = COALESCE($8, thumbnail_url),
-        join_mode = COALESCE($9, join_mode)
+        join_mode = COALESCE($9, join_mode),
+        is_nsfw = $11
        WHERE id = $10
        RETURNING *`,
-      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, is_public, banner_url, thumbnail_url, join_mode, worldId]
+      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, finalIsPublic, banner_url, thumbnail_url, join_mode, worldId, finalIsNsfw]
     );
 
-    res.json({ success: true, data: result.rows[0] });
+    res.json({
+      success: true,
+      data: result.rows[0],
+      moderation: moderationFlag ? { auto_flagged: true, reason: moderationFlag } : undefined,
+    });
   } catch (error: any) {
     console.error('Update world error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });

@@ -88,6 +88,10 @@ function CreateCampaignInner() {
       max_participants: maxParticipants,
     });
     if (res.success && res.data) {
+      const mod = (res as any).moderation;
+      if (mod?.auto_flagged) {
+        alert(`Heads up: this campaign was auto-classified as NSFW.\n\nReason: ${mod.reason}\n\nIt's still created — but it will carry an NSFW tag. Edit if this was wrong.`);
+      }
       router.push(`/campaigns/${(res.data as any).id}`);
     } else {
       setError((res as any).message || 'Failed to create campaign');

@@ -4,7 +4,7 @@ export default function TermsOfServicePage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-12">
       <h1 className="text-3xl font-bold text-white mb-2">Terms of Service</h1>
-      <p className="text-sm text-slate-500 mb-8">Last updated: March 20, 2026</p>
+      <p className="text-sm text-slate-500 mb-8">Last updated: April 25, 2026</p>
 
       <div className="prose prose-invert prose-slate max-w-none space-y-6 text-slate-300 text-sm leading-relaxed">
         <section>
@@ -52,6 +52,33 @@ export default function TermsOfServicePage() {
             <li>Promote violence, harassment, or discrimination against real individuals or groups</li>
             <li>Contain or distribute malware or malicious code</li>
           </ul>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold text-white mt-8 mb-3">4a. Content Rules &amp; NSFW Policy</h2>
+          <p>
+            RedRoomDigital is a 13+ platform. Anything publicly visible (browse pages, search,
+            recommendations, public chats) must be safe for work (SFW). What you do in private
+            chats with another consenting user is your business — we do not actively moderate
+            private conversations. We may review content if you receive a report.
+          </p>
+          <p className="mt-2">
+            Content marked NSFW (whether by you or by our automated moderation) cannot appear
+            in public listings. You may still use it privately.
+          </p>
+          <p className="mt-2 font-semibold text-white">Always prohibited, anywhere on the platform:</p>
+          <ul className="list-disc list-inside space-y-1.5 text-slate-400 mt-2">
+            <li>Sexual content involving minors (CSAM). This will be reported to authorities.</li>
+            <li>Content that sexualizes real children, even if fictional</li>
+            <li>Targeted hate speech, slurs against protected groups, or content promoting violence</li>
+            <li>Real-world threats, doxxing, or content designed to harass an identifiable person</li>
+            <li>Content depicting real, identifiable people in sexual contexts without their consent</li>
+            <li>Promotion of self-harm or suicide</li>
+          </ul>
+          <p className="mt-2">
+            Violation of these rules may result in immediate account termination and, where
+            applicable, referral to law enforcement.
+          </p>
         </section>
 
         <section>

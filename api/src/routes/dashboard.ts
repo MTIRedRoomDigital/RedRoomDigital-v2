@@ -89,7 +89,7 @@ dashboardRouter.get('/', authenticate, async (req: AuthRequest, res: Response) =
                 u.username AS creator_name
          FROM characters c
          JOIN users u ON c.creator_id = u.id
-         WHERE c.is_public = true AND c.like_count > 0
+         WHERE c.is_public = true AND c.is_nsfw = false AND c.like_count > 0
          ORDER BY c.like_count DESC, c.chat_count DESC
          LIMIT 5`
       ),
@@ -101,7 +101,7 @@ dashboardRouter.get('/', authenticate, async (req: AuthRequest, res: Response) =
                 u.username AS creator_name
          FROM worlds w
          JOIN users u ON w.creator_id = u.id
-         WHERE w.is_public = true
+         WHERE w.is_public = true AND w.is_nsfw = false
          ORDER BY w.member_count DESC, w.character_count DESC
          LIMIT 5`
       ),
@@ -125,7 +125,7 @@ dashboardRouter.get('/', authenticate, async (req: AuthRequest, res: Response) =
          FROM characters c
          JOIN users u ON c.creator_id = u.id
          LEFT JOIN worlds w ON c.world_id = w.id
-         WHERE c.is_public = true AND c.is_ai_enabled = true AND c.creator_id != $1
+         WHERE c.is_public = true AND c.is_nsfw = false AND c.is_ai_enabled = true AND c.creator_id != $1
          ORDER BY RANDOM()
          LIMIT 6`,
         [userId]

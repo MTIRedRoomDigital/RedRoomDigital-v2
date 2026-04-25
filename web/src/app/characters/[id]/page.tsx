@@ -289,6 +289,19 @@ export default function CharacterDetailPage() {
             <span>{character.chat_count} chats</span>
             <span>•</span>
             <span>{new Date(character.created_at).toLocaleDateString()}</span>
+            {/* NSFW badge — only visible to the owner so they can see why their
+                character isn't appearing in public listings. */}
+            {isOwner && (character as any).is_nsfw && (
+              <>
+                <span>•</span>
+                <span
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-rose-900/40 text-rose-300 border border-rose-800/50"
+                  title="This character is marked NSFW. It won't appear in public listings, but you can still chat with it privately."
+                >
+                  🔞 NSFW
+                </span>
+              </>
+            )}
             {/* Contradiction score badge */}
             {character.contradictions_updated_at && (
               <>

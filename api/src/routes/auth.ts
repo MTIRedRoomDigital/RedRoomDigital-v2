@@ -14,7 +14,7 @@ export const authRouter = Router();
  */
 authRouter.post('/register', async (req: Request, res: Response) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, birthdate } = req.body;
 
     // Basic validation
     if (!username || !email || !password) {
@@ -24,6 +24,29 @@ authRouter.post('/register', async (req: Request, res: Response) => {
 
     if (password.length < 6) {
       res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    // Age gate — RedRoom is 13+ (COPPA). We require birthdate at signup and
+    // refuse anyone under 13. Birthdate is stored so we can offer 18+
+    // features later without re-asking.
+    if (!birthdate) {
+      res.status(400).json({ success: false, message: 'Birthdate is required' });
+      return;
+    }
+    const dob = new Date(birthdate);
+    if (isNaN(dob.getTime())) {
+      res.status(400).json({ success: false, message: 'Invalid birthdate' });
+      return;
+    }
+    const ageMs = Date.now() - dob.getTime();
+    const ageYears = ageMs / (365.25 * 24 * 60 * 60 * 1000);
+    if (ageYears < 13) {
+      res.status(400).json({ success: false, message: 'You must be at least 13 years old to use RedRoom.' });
+      return;
+    }
+    if (ageYears > 120) {
+      res.status(400).json({ success: false, message: 'Please enter a valid birthdate.' });
       return;
     }
 
@@ -44,10 +67,10 @@ authRouter.post('/register', async (req: Request, res: Response) => {
 
     // Create user (email_verified defaults to false)
     const result = await query(
-      `INSERT INTO users (username, email, password_hash, email_verified)
-       VALUES ($1, $2, $3, false)
+      `INSERT INTO users (username, email, password_hash, birthdate, email_verified)
+       VALUES ($1, $2, $3, $4, false)
        RETURNING id, username, email, role, subscription, avatar_url, created_at, email_verified`,
-      [username, email.toLowerCase(), passwordHash]
+      [username, email.toLowerCase(), passwordHash, birthdate]
     );
 
     const user = result.rows[0];

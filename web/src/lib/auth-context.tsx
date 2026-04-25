@@ -35,7 +35,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
-  register: (username: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  register: (username: string, email: string, password: string, birthdate: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   refreshUser: () => void;
 }
@@ -77,8 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: false, message: res.message || 'Login failed' };
   };
 
-  const register = async (username: string, email: string, password: string) => {
-    const res = await api.post<{ user: User; token: string }>('/api/auth/register', { username, email, password });
+  const register = async (username: string, email: string, password: string, birthdate: string) => {
+    const res = await api.post<{ user: User; token: string }>('/api/auth/register', { username, email, password, birthdate });
 
     if (res.success && res.data) {
       localStorage.setItem('rrd_token', res.data.token);

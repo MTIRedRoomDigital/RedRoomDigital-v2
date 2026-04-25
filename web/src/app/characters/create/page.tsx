@@ -45,6 +45,7 @@ export default function CreateCharacterPage() {
   // Settings
   const [tags, setTags] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [isAiEnabled, setIsAiEnabled] = useState(true);
   const [worldId, setWorldId] = useState<string | null>(null);
   const [myWorlds, setMyWorlds] = useState<{ id: string; name: string }[]>([]);
@@ -112,12 +113,21 @@ export default function CreateCharacterPage() {
       world_id: worldId,
       is_public: isPublic,
       is_ai_enabled: isAiEnabled,
+      is_nsfw: isNsfw,
     };
 
     const res = await api.post<{ id: string }>('/api/characters', characterData);
     setLoading(false);
 
     if (res.success && res.data) {
+      // If the AI moderation flagged the character as NSFW, surface it before
+      // we navigate so the user knows why it didn't go public.
+      const mod = (res as any).moderation;
+      if (mod?.auto_flagged) {
+        alert(
+          `Heads up: your character was auto-classified as NSFW and saved as private.\n\nReason: ${mod.reason}\n\nYou can still chat with this character privately. If you think this was wrong, edit the content and turn off the NSFW flag.`
+        );
+      }
       router.push(`/characters/${res.data.id}`);
     } else {
       setError(res.message || 'Failed to create character');
@@ -400,6 +410,38 @@ export default function CreateCharacterPage() {
                 <span
                   className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
                     isAiEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* NSFW self-flag — opts out of public listings. We still scan
+                content for safety, but self-flagging skips the AI scan. */}
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              isNsfw ? 'bg-rose-950/30 border-rose-800/50' : 'bg-slate-800 border-slate-700'
+            }`}>
+              <div>
+                <div className="text-sm font-medium text-white flex items-center gap-2">
+                  Adult content (18+) <span className="text-xs">🔞</span>
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Marks this character as NSFW. Won&apos;t appear in public browse, search, or recommendations — but you can still chat with it privately.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isNsfw;
+                  setIsNsfw(next);
+                  if (next) setIsPublic(false); // can't be public AND nsfw
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3 ${
+                  isNsfw ? 'bg-rose-600' : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    isNsfw ? 'translate-x-5' : ''
                   }`}
                 />
               </button>

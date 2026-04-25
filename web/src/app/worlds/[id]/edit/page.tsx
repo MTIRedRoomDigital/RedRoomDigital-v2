@@ -22,6 +22,7 @@ interface WorldData {
   } | null;
   setting: string | null;
   is_public: boolean;
+  is_nsfw?: boolean;
   join_mode: 'open' | 'locked';
 }
 
@@ -45,6 +46,7 @@ export default function EditWorldPage() {
   const [techLevel, setTechLevel] = useState('');
   const [customRules, setCustomRules] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [joinMode, setJoinMode] = useState<'open' | 'locked'>('open');
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export default function EditWorldPage() {
         setTechLevel(w.rules?.technology_level || '');
         setCustomRules(w.rules?.custom_rules?.join('\n') || '');
         setIsPublic(w.is_public !== false);
+        setIsNsfw(w.is_nsfw === true);
         setJoinMode(w.join_mode || 'open');
         setBannerUrl(w.banner_url || null);
         setThumbnailUrl(w.thumbnail_url || null);
@@ -112,6 +115,7 @@ export default function EditWorldPage() {
       lore: lore.trim() || null,
       rules: Object.keys(rules).length > 0 ? rules : null,
       is_public: isPublic,
+      is_nsfw: isNsfw,
       join_mode: joinMode,
       banner_url: bannerUrl,
       thumbnail_url: thumbnailUrl,
@@ -120,8 +124,13 @@ export default function EditWorldPage() {
     setSubmitting(false);
 
     if (res.success) {
-      setSuccess('World updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      const mod = (res as any).moderation;
+      if (mod?.auto_flagged) {
+        setError(`Auto-flagged as NSFW: ${mod.reason}. The world was switched to private.`);
+      } else {
+        setSuccess('World updated successfully!');
+        setTimeout(() => setSuccess(''), 3000);
+      }
     } else {
       setError((res as any).message || 'Failed to update world');
     }
@@ -326,6 +335,32 @@ export default function EditWorldPage() {
                 </label>
               </div>
             )}
+
+            {/* NSFW self-flag */}
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              isNsfw ? 'bg-rose-950/30 border-rose-800/50' : 'bg-slate-800 border-slate-700'
+            }`}>
+              <div>
+                <h4 className="text-white font-medium flex items-center gap-2">
+                  Adult content (18+) <span className="text-xs">🔞</span>
+                </h4>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  Marks this world as NSFW. Won&apos;t appear in public browse.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isNsfw}
+                  onChange={(e) => {
+                    setIsNsfw(e.target.checked);
+                    if (e.target.checked) setIsPublic(false);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600" />
+              </label>
+            </div>
           </>
         )}
       </div>

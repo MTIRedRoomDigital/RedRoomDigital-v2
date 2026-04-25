@@ -36,6 +36,7 @@ interface WorldData {
   contradiction_score?: number;
   contradictions?: Contradiction[];
   contradictions_updated_at?: string | null;
+  is_nsfw?: boolean;
 }
 
 interface WorldLocation {
@@ -349,6 +350,15 @@ export default function WorldDetailPage() {
             )}
             {world.join_mode === 'locked' && (
               <span className="text-xs px-2 py-0.5 bg-amber-900/30 text-amber-400 rounded-full border border-amber-800/50">🔒 Locked</span>
+            )}
+            {/* NSFW badge — owner only; explains why the world isn't browsable. */}
+            {isCreator && world.is_nsfw && (
+              <span
+                className="text-xs px-2 py-0.5 bg-rose-900/40 text-rose-300 rounded-full border border-rose-800/50"
+                title="This world is marked NSFW. It won't appear in public listings."
+              >
+                🔞 NSFW
+              </span>
             )}
             {world.contradictions_updated_at && (
               <ConsistencyBadge

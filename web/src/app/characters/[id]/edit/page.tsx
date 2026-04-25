@@ -20,6 +20,7 @@ interface Character {
   tags: string[];
   is_public: boolean;
   is_ai_enabled: boolean;
+  is_nsfw?: boolean;
 }
 
 export default function EditCharacterPage() {
@@ -53,6 +54,7 @@ export default function EditCharacterPage() {
   const [tags, setTags] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [isAiEnabled, setIsAiEnabled] = useState(true);
+  const [isNsfw, setIsNsfw] = useState(false);
   const [worldId, setWorldId] = useState<string | null>(null);
   const [myWorlds, setMyWorlds] = useState<{ id: string; name: string }[]>([]);
 
@@ -97,6 +99,7 @@ export default function EditCharacterPage() {
         setTags((c.tags || []).join(', '));
         setIsPublic(c.is_public ?? true);
         setIsAiEnabled(c.is_ai_enabled ?? true);
+        setIsNsfw(c.is_nsfw ?? false);
         setWorldId(c.world_id || null);
       } else {
         setLoadError(res.message || 'Character not found');
@@ -170,12 +173,19 @@ export default function EditCharacterPage() {
       world_id: worldId,
       is_public: isPublic,
       is_ai_enabled: isAiEnabled,
+      is_nsfw: isNsfw,
     };
 
     const res = await api.put(`/api/characters/${params.id}`, characterData);
     setSaving(false);
 
     if (res.success) {
+      const mod = (res as any).moderation;
+      if (mod?.auto_flagged) {
+        alert(
+          `Heads up: your character was auto-classified as NSFW and switched to private.\n\nReason: ${mod.reason}\n\nIf you think this was wrong, edit the content and try again.`
+        );
+      }
       router.push(`/characters/${params.id}`);
     } else {
       setError(res.message || 'Failed to update character');
@@ -459,6 +469,37 @@ export default function EditCharacterPage() {
                 <span
                   className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
                     isAiEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* NSFW self-flag */}
+            <div className={`flex items-center justify-between p-4 border rounded-lg ${
+              isNsfw ? 'bg-rose-950/30 border-rose-800/50' : 'bg-slate-800 border-slate-700'
+            }`}>
+              <div>
+                <div className="text-sm font-medium text-white flex items-center gap-2">
+                  Adult content (18+) <span className="text-xs">🔞</span>
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Marks this character as NSFW. Won&apos;t appear in public browse, search, or recommendations — but you can still chat with it privately.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isNsfw;
+                  setIsNsfw(next);
+                  if (next) setIsPublic(false);
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3 ${
+                  isNsfw ? 'bg-rose-600' : 'bg-slate-600'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    isNsfw ? 'translate-x-5' : ''
                   }`}
                 />
               </button>
