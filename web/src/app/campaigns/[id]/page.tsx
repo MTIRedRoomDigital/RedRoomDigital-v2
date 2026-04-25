@@ -75,6 +75,13 @@ export default function CampaignDetailPage() {
   const [showCharPicker, setShowCharPicker] = useState(false);
   const [myCharacters, setMyCharacters] = useState<{ id: string; name: string; avatar_url: string | null; world_id: string | null }[]>([]);
   const [activeView, setActiveView] = useState<'chat' | 'info'>('info');
+
+  // Invite modal state
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState('');
+  const [inviteResults, setInviteResults] = useState<{ id: string; username: string; avatar_url: string | null }[]>([]);
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [sendingInvite, setSendingInvite] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch campaign data
@@ -251,6 +258,47 @@ export default function CampaignDetailPage() {
     }
   };
 
+  // Debounced user search for invite modal
+  useEffect(() => {
+    if (!showInvite) return;
+    const q = inviteQuery.trim();
+    if (q.length < 2) {
+      setInviteResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api.get<{ users: { id: string; username: string; avatar_url: string | null }[] }>(
+        `/api/users/search?q=${encodeURIComponent(q)}`
+      ).then((res) => {
+        if (res.success && res.data) {
+          // Exclude self and existing participants
+          const existingIds = new Set([
+            user?.id,
+            ...(campaign?.participants.map((p) => p.user_id) || []),
+          ]);
+          setInviteResults(((res.data as any).users || []).filter((u: any) => !existingIds.has(u.id)));
+        }
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [inviteQuery, showInvite, user?.id, campaign?.participants]);
+
+  const handleSendInvite = async (toUserId: string) => {
+    if (!campaign || sendingInvite) return;
+    setSendingInvite(toUserId);
+    const res = await api.post(`/api/campaigns/${id}/invite`, {
+      to_user_id: toUserId,
+      message: inviteMessage.trim() || undefined,
+    });
+    if (res.success) {
+      // Remove from results so user sees feedback
+      setInviteResults((prev) => prev.filter((u) => u.id !== toUserId));
+    } else {
+      alert((res as any).message || 'Failed to send invite');
+    }
+    setSendingInvite(null);
+  };
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
@@ -346,6 +394,15 @@ export default function CampaignDetailPage() {
               title={campaign.participants.length < campaign.min_participants ? `Need ${campaign.min_participants} participants` : 'Start campaign'}
             >
               {actionLoading ? 'Starting...' : 'Start Campaign'}
+            </button>
+          )}
+          {/* Invite is open to WorldMaster and participants while in draft */}
+          {campaign.status === 'draft' && user && (isWorldMaster || isParticipant) && (
+            <button
+              onClick={() => setShowInvite(true)}
+              className="px-4 py-2 text-sm border border-amber-600 text-amber-400 hover:bg-amber-900/20 rounded-lg transition-colors"
+            >
+              + Invite Players
             </button>
           )}
           {campaign.status === 'active' && isWorldMaster && (
@@ -641,6 +698,73 @@ export default function CampaignDetailPage() {
               className="w-full mt-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
             >
               Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Players Modal */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-1">Invite Players</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Search for users to invite to &quot;{campaign.name}&quot;. They&apos;ll get a notification and pick which character to bring.
+            </p>
+
+            <input
+              type="text"
+              value={inviteQuery}
+              onChange={(e) => setInviteQuery(e.target.value)}
+              placeholder="Search by username..."
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500 mb-3"
+              autoFocus
+            />
+
+            <textarea
+              value={inviteMessage}
+              onChange={(e) => setInviteMessage(e.target.value)}
+              placeholder="Optional message (e.g. 'I think your warrior would be perfect for this')"
+              rows={2}
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-xs focus:outline-none focus:border-amber-500 mb-3 resize-none"
+            />
+
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {inviteQuery.trim().length < 2 ? (
+                <p className="text-xs text-slate-500 text-center py-4">Type at least 2 characters to search</p>
+              ) : inviteResults.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-4">No users found</p>
+              ) : (
+                inviteResults.map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center gap-3 p-2 bg-slate-700/50 border border-slate-600 rounded-lg"
+                  >
+                    {u.avatar_url ? (
+                      <img src={u.avatar_url} alt={u.username} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center text-sm font-bold text-white shrink-0">
+                        {u.username[0].toUpperCase()}
+                      </div>
+                    )}
+                    <span className="font-medium text-white text-sm flex-1 truncate">{u.username}</span>
+                    <button
+                      onClick={() => handleSendInvite(u.id)}
+                      disabled={sendingInvite === u.id}
+                      className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white rounded transition-colors"
+                    >
+                      {sendingInvite === u.id ? '...' : 'Invite'}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={() => { setShowInvite(false); setInviteQuery(''); setInviteMessage(''); setInviteResults([]); }}
+              className="w-full mt-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Done
             </button>
           </div>
         </div>

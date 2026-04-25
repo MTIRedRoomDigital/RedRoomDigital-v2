@@ -39,6 +39,9 @@ const typeIcons: Record<string, string> = {
   campaign_ended: '🏁',
   campaign_approved: '📜',
   campaign_rejected: '❌',
+  campaign_invite: '✉️',
+  campaign_invite_accepted: '✅',
+  campaign_invite_declined: '❌',
   ai_chat_started: '🤖',
   takeover_request: '🎮',
   takeover_accepted: '✅',
@@ -90,6 +93,7 @@ export default function NotificationsPage() {
     if (n.type === 'canon_request' && !n.is_read) return;
     if (n.type === 'canon_removal_request' && !n.is_read) return;
     if (n.type === 'public_chat_request' && !n.is_read) return;
+    if (n.type === 'campaign_invite' && !n.is_read) return;
 
     // Mark as read first
     if (!n.is_read) await markRead(n.id);
@@ -135,6 +139,9 @@ export default function NotificationsPage() {
       case 'campaign_ended':
       case 'campaign_approved':
       case 'campaign_rejected':
+      case 'campaign_invite':
+      case 'campaign_invite_accepted':
+      case 'campaign_invite_declined':
         if (n.data?.campaignId) {
           router.push(`/campaigns/${n.data.campaignId}`);
         }
@@ -221,6 +228,28 @@ export default function NotificationsPage() {
     setResponding(null);
   };
 
+  // Decline a campaign invite inline. Accept → navigate to /campaigns/:id where the
+  // invitee picks a character and uses the regular Join flow.
+  const handleCampaignInviteDecline = async (n: Notification) => {
+    setResponding(n.id);
+    const res = await api.post(`/api/campaigns/${n.data.campaignId}/invite/respond`, {
+      notification_id: n.id,
+      action: 'decline',
+    });
+    if (res.success) {
+      setNotifications((prev) => prev.map((notif) => (notif.id === n.id ? { ...notif, is_read: true } : notif)));
+    } else {
+      alert((res as any).message || 'Something went wrong');
+    }
+    setResponding(null);
+  };
+
+  const handleCampaignInviteAccept = async (n: Notification) => {
+    if (!n.data?.campaignId) return;
+    await markRead(n.id);
+    router.push(`/campaigns/${n.data.campaignId}`);
+  };
+
   const handlePublicChatRequest = async (n: Notification, action: 'accept' | 'reject') => {
     setResponding(n.id);
     const res = await api.post(`/api/conversations/${n.data.conversationId}/public-request/respond`, {
@@ -243,7 +272,7 @@ export default function NotificationsPage() {
     if (n.type === 'world_character_request' && n.data?.worldId) return true;
     if (['canon_request', 'canon_accepted', 'canon_rejected', 'canon_removal_request', 'canon_removal_accepted', 'canon_removal_rejected'].includes(n.type) && n.data?.conversationId) return true;
     if (['public_chat_request', 'public_chat_accepted', 'public_chat_rejected'].includes(n.type) && n.data?.conversationId) return true;
-    if (['campaign_join', 'campaign_started', 'campaign_turn', 'campaign_ended', 'campaign_approved', 'campaign_rejected'].includes(n.type) && n.data?.campaignId) return true;
+    if (['campaign_join', 'campaign_started', 'campaign_turn', 'campaign_ended', 'campaign_approved', 'campaign_rejected', 'campaign_invite', 'campaign_invite_accepted', 'campaign_invite_declined'].includes(n.type) && n.data?.campaignId) return true;
     return false;
   };
 
@@ -333,6 +362,25 @@ export default function NotificationsPage() {
                         className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
                       >
                         Decline
+                      </button>
+                    </div>
+                  )}
+                  {/* Accept/Decline buttons for campaign invites */}
+                  {n.type === 'campaign_invite' && !n.is_read && (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCampaignInviteAccept(n); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-slate-700 text-white rounded-lg transition-colors font-medium"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCampaignInviteDecline(n); }}
+                        disabled={responding === n.id}
+                        className="px-3 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        {responding === n.id ? '...' : 'Decline'}
                       </button>
                     </div>
                   )}

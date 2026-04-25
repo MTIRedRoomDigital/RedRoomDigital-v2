@@ -3,8 +3,20 @@ import { query } from '../db/pool';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { createNotification } from '../services/notifications';
 import { summarizeForWorldCanon } from '../services/ai';
+import { recalcWorldContradictions } from './conversations';
 
 export const campaignRouter = Router();
+
+// Fire-and-forget world recalc — the campaign premise or canon outcome just
+// changed and may affect world contradiction score.
+//   - force=true: only on approve (canon-changing); skips 1hr cooldown.
+//   - force=false: on create/update/delete — respects cooldown so rapid edits
+//     don't burn AI tokens.
+function kickWorldRecalc(worldId: string, opts: { force?: boolean } = {}) {
+  recalcWorldContradictions(worldId, opts).catch((e: any) =>
+    console.error('World recalc (from campaign) error:', e?.message)
+  );
+}
 
 /**
  * Campaigns — World-Changing Events
@@ -150,6 +162,7 @@ campaignRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       ]
     );
 
+    kickWorldRecalc(world_id);
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (error: any) {
     console.error('Create campaign error:', error.message);
@@ -192,6 +205,7 @@ campaignRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response)
       [name, description, premise, status, max_participants, min_participants, req.params.id]
     );
 
+    kickWorldRecalc(campaign.rows[0].world_id);
     res.json({ success: true, data: result.rows[0] });
   } catch (error: any) {
     console.error('Update campaign error:', error.message);
@@ -219,6 +233,7 @@ campaignRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Respon
     }
 
     await query('DELETE FROM campaigns WHERE id = $1', [req.params.id]);
+    kickWorldRecalc(campaign.rows[0].world_id);
     res.json({ success: true, message: 'Campaign deleted' });
   } catch (error: any) {
     console.error('Delete campaign error:', error.message);
@@ -369,6 +384,273 @@ campaignRouter.post('/:id/leave', authenticate, async (req: AuthRequest, res: Re
     res.json({ success: true, message: 'Left the campaign' });
   } catch (error: any) {
     console.error('Leave campaign error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ========== INVITES ==========
+
+/**
+ * POST /api/campaigns/:id/invite
+ * Invite another user to join the campaign with one of their characters.
+ * Open to any existing participant OR the WorldMaster.
+ * Body: { to_user_id: string, suggested_character_id?: string, message?: string }
+ *
+ * Sends a notification. The invitee still has to pick a character and accept via
+ * POST /:id/invite/respond.
+ */
+campaignRouter.post('/:id/invite', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const campaignId = req.params.id as string;
+    const { to_user_id, suggested_character_id, message } = req.body;
+
+    if (!to_user_id) {
+      res.status(400).json({ success: false, message: 'to_user_id is required' });
+      return;
+    }
+    if (to_user_id === userId) {
+      res.status(400).json({ success: false, message: 'You cannot invite yourself' });
+      return;
+    }
+
+    const campaign = await query('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
+    if (campaign.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Campaign not found' });
+      return;
+    }
+    const camp = campaign.rows[0];
+
+    if (camp.status !== 'draft') {
+      res.status(400).json({ success: false, message: 'Can only invite to campaigns that haven\'t started' });
+      return;
+    }
+
+    // Permission: WorldMaster OR existing participant
+    const isWM = await isWorldMasterOf(camp.world_id, userId);
+    let canInvite = isWM;
+    if (!canInvite) {
+      const part = await query(
+        'SELECT id FROM campaign_participants WHERE campaign_id = $1 AND user_id = $2',
+        [campaignId, userId]
+      );
+      canInvite = part.rows.length > 0;
+    }
+    if (!canInvite) {
+      res.status(403).json({ success: false, message: 'Only the WorldMaster or current participants can invite others' });
+      return;
+    }
+
+    // Target must not already be in the campaign
+    const already = await query(
+      'SELECT id FROM campaign_participants WHERE campaign_id = $1 AND user_id = $2',
+      [campaignId, to_user_id]
+    );
+    if (already.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'That user is already in this campaign' });
+      return;
+    }
+
+    // Don't duplicate pending invites
+    const existingInvite = await query(
+      `SELECT id FROM notifications
+        WHERE user_id = $1 AND type = 'campaign_invite' AND is_read = false
+          AND data->>'campaignId' = $2 AND data->>'fromUserId' = $3
+        LIMIT 1`,
+      [to_user_id, campaignId, userId]
+    );
+    if (existingInvite.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'You already have a pending invite out to this user' });
+      return;
+    }
+
+    // Look up the suggested character (if any) to embed in the notification
+    let suggestedName: string | null = null;
+    if (suggested_character_id) {
+      const ch = await query(
+        'SELECT name FROM characters WHERE id = $1 AND creator_id = $2',
+        [suggested_character_id, to_user_id]
+      );
+      if (ch.rows.length > 0) suggestedName = ch.rows[0].name;
+    }
+
+    await createNotification({
+      userId: to_user_id,
+      type: 'campaign_invite',
+      title: 'Campaign Invitation',
+      body: suggestedName
+        ? `${req.user!.username} invited ${suggestedName} to join "${camp.name}"`
+        : `${req.user!.username} invited you to join "${camp.name}"`,
+      data: {
+        campaignId,
+        campaignName: camp.name,
+        worldId: camp.world_id,
+        fromUserId: userId,
+        fromUsername: req.user!.username,
+        suggestedCharacterId: suggested_character_id || null,
+        suggestedCharacterName: suggestedName,
+        message: message || null,
+      },
+      io: req.app.get('io'),
+    });
+
+    res.json({ success: true, message: 'Invite sent' });
+  } catch (error: any) {
+    console.error('Campaign invite error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
+ * POST /api/campaigns/:id/invite/respond
+ * Accept or decline a campaign invite.
+ * Body: { notification_id: string, action: 'accept' | 'decline', character_id?: string }
+ *
+ * On accept, the invitee must provide a character_id they own. Server verifies
+ * ownership + world membership, then runs the same join logic as POST /:id/join.
+ * Ensures the invitee is a world member — auto-joins them to the world if the
+ * world is open, otherwise rejects with a message telling them to request access.
+ */
+campaignRouter.post('/:id/invite/respond', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const campaignId = req.params.id as string;
+    const { notification_id, action, character_id } = req.body;
+
+    if (!notification_id || !['accept', 'decline'].includes(action)) {
+      res.status(400).json({ success: false, message: 'notification_id and action (accept/decline) are required' });
+      return;
+    }
+
+    // Mark the invite notification read
+    await query('UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2', [notification_id, userId]);
+
+    if (action === 'decline') {
+      // Notify inviter
+      const notif = await query(
+        "SELECT data FROM notifications WHERE id = $1",
+        [notification_id]
+      );
+      const data = notif.rows[0]?.data || {};
+      if (data.fromUserId) {
+        await createNotification({
+          userId: data.fromUserId,
+          type: 'campaign_invite_declined',
+          title: 'Invite Declined',
+          body: `${req.user!.username} declined your invite to "${data.campaignName || 'the campaign'}".`,
+          data: { campaignId, campaignName: data.campaignName },
+          io: req.app.get('io'),
+        });
+      }
+      res.json({ success: true, message: 'Declined' });
+      return;
+    }
+
+    // Accept: need a character_id
+    if (!character_id) {
+      res.status(400).json({ success: false, message: 'character_id is required to accept' });
+      return;
+    }
+
+    const campaign = await query('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
+    if (campaign.rows.length === 0) {
+      res.status(404).json({ success: false, message: 'Campaign not found' });
+      return;
+    }
+    const camp = campaign.rows[0];
+    if (camp.status !== 'draft') {
+      res.status(400).json({ success: false, message: 'Campaign has already started' });
+      return;
+    }
+
+    // Verify ownership
+    const ch = await query(
+      'SELECT id, name FROM characters WHERE id = $1 AND creator_id = $2',
+      [character_id, userId]
+    );
+    if (ch.rows.length === 0) {
+      res.status(403).json({ success: false, message: 'You do not own that character' });
+      return;
+    }
+
+    // Already in campaign?
+    const dup = await query(
+      'SELECT id FROM campaign_participants WHERE campaign_id = $1 AND user_id = $2',
+      [campaignId, userId]
+    );
+    if (dup.rows.length > 0) {
+      res.status(400).json({ success: false, message: 'You already have a character in this campaign' });
+      return;
+    }
+
+    // Participant limit
+    const count = await query(
+      'SELECT COUNT(*) FROM campaign_participants WHERE campaign_id = $1',
+      [campaignId]
+    );
+    if (parseInt(count.rows[0].count) >= (camp.max_participants || 6)) {
+      res.status(400).json({ success: false, message: 'Campaign is full' });
+      return;
+    }
+
+    // Ensure world membership — auto-join if the world is open.
+    const worldMember = await query(
+      'SELECT id FROM world_members WHERE world_id = $1 AND user_id = $2',
+      [camp.world_id, userId]
+    );
+    if (worldMember.rows.length === 0) {
+      const world = await query('SELECT join_mode FROM worlds WHERE id = $1', [camp.world_id]);
+      if (world.rows[0]?.join_mode === 'locked') {
+        res.status(403).json({
+          success: false,
+          message: 'This world is locked. Request to join the world first, then accept this invite.',
+        });
+        return;
+      }
+      await query('INSERT INTO world_members (world_id, user_id) VALUES ($1, $2)', [camp.world_id, userId]);
+      await query('UPDATE worlds SET member_count = member_count + 1 WHERE id = $1', [camp.world_id]);
+    }
+
+    // Turn order = next slot
+    const turnResult = await query(
+      'SELECT COALESCE(MAX(turn_order), -1) + 1 AS next_turn FROM campaign_participants WHERE campaign_id = $1',
+      [campaignId]
+    );
+
+    await query(
+      `INSERT INTO campaign_participants (campaign_id, character_id, user_id, turn_order)
+       VALUES ($1, $2, $3, $4)`,
+      [campaignId, character_id, userId, turnResult.rows[0].next_turn]
+    );
+
+    // Notify the WorldMaster + inviter
+    const notif = await query("SELECT data FROM notifications WHERE id = $1", [notification_id]);
+    const inviteData = notif.rows[0]?.data || {};
+
+    if (camp.creator_id !== userId) {
+      await createNotification({
+        userId: camp.creator_id,
+        type: 'campaign_join',
+        title: 'Character Joined Campaign',
+        body: `${ch.rows[0].name} joined "${camp.name}" via invite`,
+        data: { campaignId, characterName: ch.rows[0].name, fromUserId: userId },
+        io: req.app.get('io'),
+      });
+    }
+    if (inviteData.fromUserId && inviteData.fromUserId !== camp.creator_id && inviteData.fromUserId !== userId) {
+      await createNotification({
+        userId: inviteData.fromUserId,
+        type: 'campaign_invite_accepted',
+        title: 'Invite Accepted',
+        body: `${req.user!.username} accepted your invite with ${ch.rows[0].name}!`,
+        data: { campaignId, campaignName: camp.name },
+        io: req.app.get('io'),
+      });
+    }
+
+    res.json({ success: true, message: `${ch.rows[0].name} joined the campaign!` });
+  } catch (error: any) {
+    console.error('Campaign invite respond error:', error.message);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -865,6 +1147,9 @@ campaignRouter.post('/:id/approve', authenticate, async (req: AuthRequest, res: 
         io: req.app.get('io'),
       });
     }
+
+    // Force a world recalc — canon just changed in a real way
+    kickWorldRecalc(camp.world_id, { force: true });
 
     res.json({
       success: true,

@@ -688,8 +688,28 @@ export async function analyzeWorldContradictions(
   );
   const characters = charRes.rows;
 
+  // Pull campaigns — their premises are prompts that can clash with the world's tone.
+  // A "Mayoral Election" campaign in a medieval fantasy world is a legitimate flag.
+  // We skip archived campaigns that were rejected (they never became canon).
+  // Table may not exist on very old worlds; fail open.
+  let campaigns: { id: string; name: string; description: string | null; premise: string | null; status: string; outcome: string | null }[] = [];
+  try {
+    const campRes = await query(
+      `SELECT id, name, description, premise, status, outcome
+         FROM campaigns
+        WHERE world_id = $1
+          AND NOT (status = 'archived' AND outcome = 'Rejected by WorldMaster')
+        ORDER BY created_at DESC
+        LIMIT 12`,
+      [worldId]
+    );
+    campaigns = campRes.rows;
+  } catch {
+    // campaigns table may not exist
+  }
+
   // Early exit: empty world — nothing to be inconsistent about yet.
-  if (!w.lore && !w.setting && characters.length === 0) {
+  if (!w.lore && !w.setting && characters.length === 0 && campaigns.length === 0) {
     return { score: 0, contradictions: [] };
   }
 
@@ -729,7 +749,8 @@ export async function analyzeWorldContradictions(
   // characters with canon). This also saves money on thousands of empty worlds.
   const hasEnoughForAiPass =
     (w.lore && w.lore.length > 50) ||
-    characters.filter((c) => (parseInt(c.history_count) || 0) >= 2).length >= 2;
+    characters.filter((c) => (parseInt(c.history_count) || 0) >= 2).length >= 2 ||
+    campaigns.length > 0;
 
   let aiScore = 0;
   if (hasEnoughForAiPass) {
@@ -743,7 +764,12 @@ export async function analyzeWorldContradictions(
 ${recentHist || '   (no canon yet)'}`;
     }).join('\n\n');
 
-    const prompt = `You are a world-building consistency auditor for a shared roleplaying platform. Analyze the world "${w.name}" for INTERNAL CONTRADICTIONS between its established lore/rules and the canon events of characters who live there.
+    const campaignBlocks = campaigns.map((c) => {
+      return `• "${c.name}" [${c.status}]${c.description ? ` — ${c.description}` : ''}
+   Premise: ${c.premise || '(none)'}${c.outcome ? `\n   Canon outcome: ${c.outcome}` : ''}`;
+    }).join('\n\n');
+
+    const prompt = `You are a world-building consistency auditor for a shared roleplaying platform. Analyze the world "${w.name}" for INTERNAL CONTRADICTIONS between its established lore/rules, the canon events of characters who live there, AND the premises of campaigns (world-changing events) set within it.
 
 --- WORLD ---
 Name: ${w.name}
@@ -755,8 +781,13 @@ Rules: ${typeof w.rules === 'object' ? JSON.stringify(w.rules) : w.rules || '(no
 --- MEMBER CHARACTERS (up to 20, most-active first) ---
 ${charBlocks || '(no member characters yet)'}
 
+--- CAMPAIGNS (up to 12, most recent first) ---
+${campaignBlocks || '(no campaigns yet)'}
+
 Identify contradictions. Focus on:
 - Character canon events that violate the world's lore or rules (e.g. world says magic is extinct, but a canon event has a character casting spells)
+- Campaign premises that don't fit the world's tone or setting (e.g. a "Mayoral Election" campaign in a medieval monarchy, a modern tech premise in a fantasy world)
+- Campaign outcomes that contradict established world canon
 - Settings or timelines that don't add up across characters (e.g. two characters both claim to be the last surviving royal)
 - World rules that contradict themselves
 
@@ -766,7 +797,8 @@ Respond with ONLY valid JSON:
     {
       "severity": "minor" | "moderate" | "severe",
       "description": "One-sentence summary of the contradiction",
-      "evidence": ["Quote/paraphrase from world lore", "Quote/paraphrase from conflicting character canon"]
+      "evidence": ["Quote/paraphrase from world lore", "Quote/paraphrase from conflicting character canon or campaign"],
+      "campaign_name": "(optional — only if this contradiction is about a campaign)"
     }
   ]
 }
@@ -783,7 +815,7 @@ Only flag REAL contradictions. If the world is internally consistent, return { "
     const content = response.choices[0].message.content || '{"contradictions":[]}';
     try {
       const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed: { contradictions: { severity: string; description: string; evidence: string[] }[] } = JSON.parse(cleaned);
+      const parsed: { contradictions: { severity: string; description: string; evidence: string[]; campaign_name?: string }[] } = JSON.parse(cleaned);
 
       const weights: Record<string, number> = { minor: 1, moderate: 3, severe: 6 };
       aiScore = (parsed.contradictions || []).reduce((sum, c) => sum + (weights[c.severity] || 1), 0);
@@ -793,7 +825,8 @@ Only flag REAL contradictions. If the world is internally consistent, return { "
           severity: (['minor', 'moderate', 'severe'].includes(c.severity) ? c.severity : 'minor') as any,
           description: c.description,
           evidence: Array.isArray(c.evidence) ? c.evidence : [],
-          source: 'world-coherence',
+          // Campaign-tagged contradictions get a distinct source so the UI can label them.
+          source: c.campaign_name ? `campaign:${c.campaign_name}` : 'world-coherence',
         });
       }
     } catch {

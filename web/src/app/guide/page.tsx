@@ -218,6 +218,41 @@ const SECTIONS: Section[] = [
     ),
   },
   {
+    id: 'campaigns',
+    title: 'Campaigns',
+    icon: '⚔️',
+    blurb: 'World-changing events that become canon.',
+    body: (
+      <>
+        <p>
+          A <strong>Campaign</strong> is a structured, multi-character event inside a world — an
+          election, a war, a heist, a tournament. The WorldMaster sets a premise and a participant
+          range; players join with a character of their choice; the campaign runs as a turn-based
+          group chat.
+        </p>
+        <p>
+          When the campaign ends, the WorldMaster reviews the transcript and either{' '}
+          <strong className="text-green-400">approves</strong> it (the AI summarizes what happened
+          and adds events to world canon and each character&apos;s history) or rejects it.
+        </p>
+        <p>
+          Anyone with a character in the world can <strong>invite other players</strong> to a draft
+          campaign — a great way to round out a roster. Invitees get a notification and pick which
+          character to bring.
+        </p>
+        <p>
+          Campaigns also factor into the <Link href="#contradiction-score" className="text-amber-400 hover:text-amber-300">world&apos;s contradiction score</Link>.
+          A modern-day election campaign in a medieval fantasy world will get flagged — premises
+          that don&apos;t fit the world&apos;s tone count as contradictions, just like character
+          canon that breaks the rules.
+        </p>
+        <p className="text-slate-400 text-sm">
+          Start one from the <strong>+ Create</strong> menu, or from any world page you own.
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'ai-takeover',
     title: 'AI Takeover',
     icon: '🤖',
