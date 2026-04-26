@@ -536,7 +536,12 @@ export default function CampaignDetailPage() {
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-sm font-semibold text-amber-400">{msg.sender_name}</span>
+                        <Link
+                          href={`/characters/${msg.sender_character_id}`}
+                          className="text-sm font-semibold text-amber-400 hover:text-amber-300 transition-colors"
+                        >
+                          {msg.sender_name}
+                        </Link>
                         <span className="text-[10px] text-slate-600">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>

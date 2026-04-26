@@ -529,7 +529,14 @@ export default function ChatRoomPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-white truncate">
-                {partnerParticipant?.character_name || 'Unknown'}
+                {partnerParticipant ? (
+                  <Link
+                    href={`/characters/${partnerParticipant.character_id}`}
+                    className="hover:text-red-400 transition-colors"
+                  >
+                    {partnerParticipant.character_name}
+                  </Link>
+                ) : 'Unknown'}
               </h2>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${ctx.color}`}>
                 {ctx.label}
@@ -778,9 +785,12 @@ export default function ChatRoomPage() {
                 {/* Message bubble */}
                 <div className={`max-w-[70%] ${isMe ? 'items-end' : 'items-start'}`}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-slate-400">
+                    <Link
+                      href={`/characters/${msg.sender_character_id}`}
+                      className="text-xs font-medium text-slate-400 hover:text-red-400 transition-colors"
+                    >
                       {msg.sender_name}
-                    </span>
+                    </Link>
                     {msg.sender_type === 'ai' && (
                       <span className="text-[10px] px-1.5 py-0.5 bg-purple-900/30 text-purple-400 rounded-full">
                         AI
