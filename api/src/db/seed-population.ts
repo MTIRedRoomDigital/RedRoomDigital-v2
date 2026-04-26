@@ -578,6 +578,246 @@ const WORLD_MEMBERS: { world: string; user: string }[] = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────
+// CHARACTER CANON (history events)
+// Each event reads as a snapshot — short, dated relative-feel, with an
+// `impact` line that explains how it changed the character. These get
+// rolled into character.history JSONB and feed the contradiction analyzer
+// + chat AI prompts.
+// ──────────────────────────────────────────────────────────────────────
+interface CanonEvent {
+  event: string;
+  impact: string;
+  date?: string; // ISO; optional
+}
+const CANON: Record<string, CanonEvent[]> = {
+  'Cardinal Iohanna Vell': [
+    { event: 'Lost her right arm in the casting at Saatren Bridge.', impact: 'Wears a silver replacement. Refuses to discuss the day.' },
+    { event: 'Walked from the mountain seminary back to the Vale on foot, alone, over forty days.', impact: 'Returned thinner, harder, and unwilling to wear vestments again.' },
+    { event: 'Refused the Aurelisi inquisitor\'s request for an audience.', impact: 'The seminary stopped sending her letters that month.' },
+  ],
+  'Brenn Two-Coat': [
+    { event: 'Pulled a child alive from the burning river — third recorded survival in the order\'s history.', impact: 'Has not spoken about the child since. The child was four. Brenn was twenty-two.' },
+    { event: 'Found her brother\'s coat folded on the riverbank a week after he drowned.', impact: 'Started wearing both coats. Has worn both ever since.' },
+  ],
+  'Fenrik of No House': [
+    { event: 'Refused the order to burn the granary at Hael\'s Crossing.', impact: 'Walked away from his lance the next morning. Has not used his given name since.' },
+    { event: 'Killed a Khelmri tracker sent to recover him, in the woods south of the river.', impact: 'Buried him under a cairn. Visits the cairn once a year.' },
+  ],
+  'Old Auntie Thessa': [
+    { event: 'Resigned from the Aurelisi court mid-ceremony, walked out, and never returned.', impact: 'The reason was never recorded. The court does not speak of her.' },
+    { event: 'Bought the bookshop above the stable in Greyburn for nine silver pieces.', impact: 'Has lived above it for forty-one years.' },
+    { event: 'Turned a debtor named Marl into a cat for the duration of his unpaid balance.', impact: 'Marl, the cat, has lived in the shop for nineteen years and is showing no sign of changing back.' },
+  ],
+  'Archivist Wen Tobari': [
+    { event: 'Tested into the Archivist track at thirty after a decade in hydroponics.', impact: 'The senior Archivists have not let it go. They sit Tobari at the end of the meeting table.' },
+    { event: 'Identified the second of seven Section Four lower-deck door inscriptions.', impact: 'Earned third-rank. Was given a converted maintenance closet for an office.' },
+    { event: 'Privately decoded one verb in the Section Four airlock inscription.', impact: 'Has not filed the paper. The verb is "to wake."' },
+  ],
+  'Reesha Ndovu': [
+    { event: 'Spliced a failing reclaimer junction in twelve minutes during a 2087 outage.', impact: 'The Council noted it. She did not put in for the citation.' },
+    { event: 'Refused a transfer to the upper-deck team three years running.', impact: 'Chief Engineer stopped offering. Reesha kept her shift.' },
+  ],
+  'Voice-Counselor Ade Okorie': [
+    { event: 'Won the Section Twelve seat in his first run, three months ago.', impact: 'Inherited a backlog of 412 unread petitions. Has answered 308.' },
+    { event: 'Refused a Helix Health lobbyist\'s lunch invitation.', impact: 'The lobbyist sent flowers anyway. Ade gave them to his neighbor.' },
+  ],
+  'Sheriff Maeve Doolan': [
+    { event: 'Found her brother Tom alone at the edge of the state forest in October 1973.', impact: 'Tom never remembered what happened. Maeve never went into the forest after dark again.' },
+    { event: 'Buried Tom in 1981 after his stroke at twenty-four.', impact: 'Took the deputy job that same year.' },
+    { event: 'Closed the 1996 Halloween disappearance case as "inconclusive."', impact: 'Three of the missing came back. Two did not. She still drives past the woods on October 31.' },
+  ],
+  'Reverend Dale Marston': [
+    { event: 'Came home from his second tour in 1971 and joined the seminary instead of finishing his degree.', impact: 'Has not spoken about either tour since.' },
+    { event: 'Buried Mrs. Halverson in 1993; she came back to the church the following Sunday.', impact: 'Dale let her sit in the back pew. She left after the doxology.' },
+    { event: 'Found a small wooden carving on the church steps three nights in a row.', impact: 'Has not told Maeve. He is going to. Soon.' },
+  ],
+  'Janelle Reyes': [
+    { event: 'Started working Tuesdays and Fridays at the all-night diner.', impact: 'Pays her mother\'s rent in cash on Saturdays.' },
+    { event: 'Saw the man at booth four for the first time at 3:14 a.m. on October 7, 1998.', impact: 'He left no money and there was no record on the camera. She watched the tape twice.' },
+  ],
+  'Donna Cellaria di March': [
+    { event: 'First husband died in his sleep in 1864 — natural causes.', impact: 'The Court whispered. She did not respond.' },
+    { event: 'Second husband, also a March, died in his sleep in 1871 — natural causes.', impact: 'The whispers stopped being whispers. She still did not respond.' },
+    { event: 'Has hosted the same Thursday salon every week for nine years.', impact: 'Attendance is now considered a political signal.' },
+  ],
+  'Renzo of Five Names': [
+    { event: 'Forged his first commercial bill of lading at twenty-two for a House Velli clerk.', impact: 'Clerk got the promotion. Renzo got a year of contracts.' },
+    { event: 'Passed off a forged Vasilisi cardinal\'s seal for two months in 1907.', impact: 'No one realized. He realized he could keep going. He has been keeping going since.' },
+  ],
+  'Brother Vass': [
+    { event: 'Joined the mendicant order at sixteen after a fire he refuses to discuss.', impact: 'The fire took something from him he has not named, even in confession.' },
+    { event: 'Heard the confession of the woman who is now Duchess of South Vermilio.', impact: 'Has the letters she wrote him afterward. Has not read them. Keeps them in his bowl.' },
+  ],
+  'Detective Mei "Mai" Cheng': [
+    { event: 'Brother killed in a wrong-address Helix Defense raid in 2084.', impact: 'Department closed the case in eleven days. Mei reopened her own copy and has worked it on her own time since.' },
+    { event: 'Highest homicide clearance rate in district 18 for three consecutive years.', impact: 'Has not been promoted once.' },
+  ],
+  'Booker Tan': [
+    { event: 'Bought out his Aozora subcontractor agreement after his shift partner died of "respiratory complications."', impact: 'Has not worked under contract since. Will not.' },
+    { event: 'Took on the level-22 mechanic\'s twelve-year-old daughter when Helix raided the shop.', impact: 'She sleeps in the back office. He has not asked Cheng yet what to do with her.' },
+  ],
+  'Vex': [
+    { event: 'First clean datalift from a Helix Defense black-net node, age 19.', impact: 'Made her name. The reputation has been earning her work since.' },
+    { event: 'Sixth dive of the year left her left hand tremoring.', impact: 'Has not told her broker. Her broker has noticed.' },
+  ],
+  'Dr. Ines Albright': [
+    { event: 'Defended her dissertation on pre-classical Etruscan loss-patterns.', impact: 'Won the department prize and three job offers. Took the worst-paying one.' },
+    { event: 'Identified what may be a single verb in the 2019 pottery inscription.', impact: 'Has told no one. Keeps the notebook on her at all times now.' },
+  ],
+  'Walt Brennan': [
+    { event: 'Closed his last Pinkerton case in November 1925.', impact: 'Will not describe the case to anyone, including the agency.' },
+    { event: 'Took two private cases in 1927.', impact: 'Both ended quietly. Walt does not say how.' },
+  ],
+  'Yuki Hara': [
+    { event: 'Released their first record at 19. Released their last record at 27.', impact: 'The label dropped them. They moved to Sapporo.' },
+    { event: 'Three years and one month sober as of this morning.', impact: 'Has started writing again. The new songs are good. They are afraid of them.' },
+  ],
+};
+
+// ──────────────────────────────────────────────────────────────────────
+// CHARACTER RELATIONSHIPS
+// Stored bidirectionally so each character page shows the link.
+// ──────────────────────────────────────────────────────────────────────
+interface RelSeed {
+  a: string; // character name
+  b: string;
+  type: string; // 'ally', 'rival', 'mentor', etc.
+  description?: string;
+  strength?: number;
+}
+const RELATIONSHIPS: RelSeed[] = [
+  // Sundered Vale
+  { a: 'Cardinal Iohanna Vell', b: 'Old Auntie Thessa', type: 'rival', description: 'Old colleagues from the Aurelisi court. Each thinks the other should have left sooner.', strength: 70 },
+  { a: 'Cardinal Iohanna Vell', b: 'Brenn Two-Coat', type: 'mentor', description: 'Iohanna has read futures in the river the way the keepers do. Brenn does not entirely trust this.', strength: 60 },
+  { a: 'Brenn Two-Coat', b: 'Fenrik of No House', type: 'ally', description: 'They\'ve drunk together more than they\'ve talked. Both prefer it that way.', strength: 55 },
+  { a: 'Old Auntie Thessa', b: 'Brenn Two-Coat', type: 'mentor', description: 'Thessa lets Brenn read at the shop on rainy days. Pretends not to notice when Brenn cries.', strength: 65 },
+
+  // Helio-9
+  { a: 'Archivist Wen Tobari', b: 'Reesha Ndovu', type: 'ally', description: 'Started talking when Tobari needed maintenance access to a sealed corridor. Now they meet for tea on Thursdays.', strength: 75 },
+  { a: 'Voice-Counselor Ade Okorie', b: 'Reesha Ndovu', type: 'ally', description: 'Reesha\'s aunt was Ade\'s middle-school teacher. He still calls her ma\'am by accident.', strength: 60 },
+
+  // Drowsing County
+  { a: 'Sheriff Maeve Doolan', b: 'Reverend Dale Marston', type: 'ally', description: 'Two of the three people in the county who remember 1973 clearly. Each knows the other knows.', strength: 80 },
+  { a: 'Sheriff Maeve Doolan', b: 'Janelle Reyes', type: 'ally', description: 'Maeve\'s late brother taught at Drowsing High. Maeve has known Janelle\'s mother for twenty years.', strength: 50 },
+  { a: 'Reverend Dale Marston', b: 'Janelle Reyes', type: 'mentor', description: 'She comes by the church on Sunday afternoons. She doesn\'t pray. They don\'t talk about it.', strength: 55 },
+
+  // Vermillion Court
+  { a: 'Donna Cellaria di March', b: 'Renzo of Five Names', type: 'ally', description: 'Eight years of contracts, no betrayal yet. Both consider this an achievement.', strength: 70 },
+  { a: 'Brother Vass', b: 'Donna Cellaria di March', type: 'rival', description: 'She has tried to recruit him three times. He has refused three times. Politely.', strength: 60 },
+  { a: 'Renzo of Five Names', b: 'Brother Vass', type: 'ally', description: 'Renzo confesses to Vass once a month. Always honestly. Vass thinks this is its own kind of cleverness.', strength: 65 },
+
+  // Neo-Taipei
+  { a: 'Detective Mei "Mai" Cheng', b: 'Booker Tan', type: 'ally', description: 'They first met when Cheng questioned Booker about the dead mechanic. Both walked away thinking the other was straight.', strength: 70 },
+  { a: 'Vex', b: 'Booker Tan', type: 'ally', description: 'Booker\'s broker is Vex\'s broker. They\'ve never worked a job together. Each thinks the other might say no.', strength: 50 },
+
+  // Cross-world (vacuum char to a vacuum char)
+  { a: 'Dr. Ines Albright', b: 'Walt Brennan', type: 'ally', description: 'Hired him after the office was disturbed. Already trusts him more than her supervisor.', strength: 60 },
+];
+
+// ──────────────────────────────────────────────────────────────────────
+// FORUM POSTS + REPLIES
+// Categories already exist on prod (General Discussion, Introductions,
+// Character Workshop, World Building, Quest Board, Lore & Stories,
+// Feature Requests, Bug Reports). We post into a few of them. Replies
+// quote-feel like a real thread, not a brainstorm.
+// ──────────────────────────────────────────────────────────────────────
+interface ForumPostSeed {
+  category: string; // exact category name
+  author: string; // username (we'll map via h() if needed; pre-mapped here)
+  title: string;
+  content: string;
+  daysAgo?: number;
+  replies?: { author: string; content: string }[];
+}
+const FORUM_POSTS: ForumPostSeed[] = [
+  {
+    category: 'Introductions',
+    author: 'mothbrain',
+    title: 'New here, just trying to figure out where to put a character',
+    content: 'Hey everyone. I\'ve been writing on smaller forums for a few years and just signed up. I\'ve got a 17-year-old waitress in a 90s horror setting and I\'m not sure if she belongs in a world that exists or if I should leave her in vacuum until I find one. What do most people do here?',
+    daysAgo: 11,
+    replies: [
+      { author: 'slowburn_dread', content: 'Drowsing County (it\'s mine) might fit her. 90s horror, small-town, late-night diner energy. No pressure — but she sounds like she\'d work there. There\'s an active campaign too.' },
+      { author: 'retiredwizard', content: 'I\'d say leave her in vacuum for the first couple of chats just so you get a sense of her voice. Easier to drop her into a world later than yank her out of the wrong one.' },
+      { author: 'mothbrain', content: 'Both helpful, thanks. I\'ll try a couple of vacuum chats first and then look at Drowsing.' },
+    ],
+  },
+  {
+    category: 'World Building',
+    author: 'pixeltea',
+    title: 'How much lore is too much lore',
+    content: 'I built Helio-9 over about three months and I keep going back and adding to the lore field. I\'m at 4,200 characters and I\'m worried I\'m overdoing it. The problem is the lore matters — characters in the world reference it. But I don\'t want anyone reading my world page and bouncing because it\'s a wall of text.\n\nDoes anyone split lore into tabs / collapsibles? Is there a length where new players just close the tab?',
+    daysAgo: 8,
+    replies: [
+      { author: 'hexpriestess', content: 'I\'ve been GMing for ten years and the answer I\'ve landed on is: write everything you want for yourself, but only put the first 600-800 chars on the world page. The rest goes into a separate "World History" doc you link from the description. Players who want it find it. Players who don\'t aren\'t scared off.' },
+      { author: 'collapseera', content: 'Hard agree with hex. I went the other way once — full 6000-char lore dump on the world page — and the world had like one new join in two months. Cut it down to a paragraph and four bullet points and joins doubled.' },
+      { author: 'pixeltea', content: 'Okay this is helpful. I\'ll try cutting to 800 and moving the rest to a doc. Will report back.' },
+      { author: 'onelinerguy', content: 'Bullet points are doing god\'s work in worldbuilding. Tells you the texture without reading like a wikipedia article.' },
+    ],
+  },
+  {
+    category: 'Character Workshop',
+    author: 'glassbones',
+    title: 'How do you write a character whose biggest enemy is themselves without making them a wet blanket',
+    content: 'Title is the problem. Every time I write self-destructive characters they end up being the kind of person nobody at the table wants to chat with. I want them to be the difficult one without being miserable to interact with.\n\nWhat\'s working for people?',
+    daysAgo: 6,
+    replies: [
+      { author: 'felonyforlove', content: 'Give them a thing they\'re actively trying for, even if they\'re sabotaging it. The drive matters more than the doom. Otherwise they\'re just sad at people.' },
+      { author: 'twentiesnoir', content: 'Humor. Self-aware humor specifically. The character can know they\'re a wreck and still make jokes about it. Walt does this constantly and I think it\'s why people chat with him.' },
+      { author: 'glassbones', content: 'Both of these are good. The drive thing especially — Yuki has the writing-again arc but I haven\'t been making it active enough in chats. They\'re too "in the past" and not "trying to make something now."' },
+      { author: 'hexpriestess', content: 'Self-aware humor + active goal + at least one person they\'d actually pick up the phone for. If you can\'t answer that last one, they\'re too isolated.' },
+    ],
+  },
+  {
+    category: 'Quest Board',
+    author: 'slowpoisongirl',
+    title: 'Looking for one more character for The Six-Year Election',
+    content: 'Vermillion Court campaign, draft status, four players in. Looking for one more — ideally a character with reason to be at court but not aligned with any of the Twelve Houses. Spies, scribes, foreign envoys, mendicants who hear too much, that kind of role.\n\nThe campaign premise is set; we\'re running it as a slow-burn intrigue piece. Long-form preferred. DM me if interested.',
+    daysAgo: 4,
+    replies: [
+      { author: 'glassbones', content: 'Dropped you a friend request. I have a Sapporo musician who does not at all fit the brief but I have a foreign envoy concept that might.' },
+      { author: 'conartistprep', content: 'Renzo is in this one. Looking forward to it.' },
+      { author: 'slowpoisongirl', content: 'Hexpriestess is in too. Two slots left actually now that I count.' },
+    ],
+  },
+  {
+    category: 'Lore & Stories',
+    author: 'rainbeats',
+    title: '[Excerpt] What happens when you let a corp own your filtration contract',
+    content: 'Pulled from a chat between Booker and a level-9 walkup that I want to share — the corp dialogue specifically. Not the whole chat, just the bit about what Aozora did to the air on level 7. Curious if it lands the same out of context.\n\n---\n\n"You know how Aozora sells the contract. They tell you every apartment gets the same filter spec. That\'s true. The spec is the same. The maintenance schedule isn\'t. Level 22 gets a swap every six months. Level 7 gets one every fourteen. By the end of fourteen months that filter is doing nothing. You\'re breathing through a piece of cardboard. Ask me how I know."\n\n---\n\nWriting Booker\'s anger has been a project. Most of the time he hides it. This one moment I let him not hide it. Still figuring out the rhythm.',
+    daysAgo: 3,
+    replies: [
+      { author: 'collapseera', content: 'Lands. The "ask me how I know" closer is doing real work. You don\'t need the rest of the chat for that to hit.' },
+      { author: 'wrenchgoblin', content: 'Booker is one of my favorite characters on the platform, full stop. The way you write trade-talk anger is so good.' },
+      { author: 'mothbrain', content: 'The maintenance-schedule detail is what sells it. Specific enough that you trust the world.' },
+    ],
+  },
+  {
+    category: 'Feature Requests',
+    author: 'threeparagraphsmin',
+    title: 'Per-chat speaking-style override',
+    content: 'Loving the speaking-style picker but I want to override it per chat sometimes. Vex talks differently to Booker than she talks to a mark. Right now I have to go change her style in the editor before each chat which is a lot of clicks.\n\nWould a "for this chat only" override field work?',
+    daysAgo: 2,
+    replies: [
+      { author: 'pixeltea', content: 'Tobari does this too. Speaks differently around Reesha than around the senior Archivists. I\'d use this.' },
+      { author: 'hexpriestess', content: 'Seconding. Although: in my experience, if a character\'s speaking style genuinely changes around a specific person, that\'s worth capturing as a relationship note rather than a per-chat override. The relationship description can include "speaks more openly with X."' },
+      { author: 'threeparagraphsmin', content: 'That\'s a fair point. Would still want both.' },
+    ],
+  },
+  {
+    category: 'General Discussion',
+    author: 'wrongsideoftheright',
+    title: 'When does a chat actually deserve to be canon',
+    content: 'I keep almost-requesting canon and then not. The chat felt good when we wrote it but in the morning I look back and it\'s just two people having a conversation. Nothing changed. No vow, no fight, no decision.\n\nAm I being too strict about what counts? What\'s the bar for the rest of you?',
+    daysAgo: 1,
+    replies: [
+      { author: 'hexpriestess', content: 'My rule is: if removing this chat from canon would make any future chat not make sense, it\'s canon. If both characters could keep going as if it never happened, leave it out.' },
+      { author: 'glassbones', content: 'Agree with hex. Conversations can be great without being canon. It\'s a preservation thing, not a quality bar.' },
+      { author: 'slowburn_dread', content: 'I\'ll add: the snapshot feature is good for the "almost canon" stuff. Lets you mark a moment without committing the whole conversation. I\'ve been using it more lately.' },
+    ],
+  },
+];
+// ──────────────────────────────────────────────────────────────────────
 // PUBLIC CHATS
 // Short hand-authored exchanges between two characters. Each one stays in
 // character voice — Sheriff Doolan sounds like Doolan, Vex sounds like Vex.
@@ -918,6 +1158,106 @@ async function main() {
     chatsAdded++;
   }
   console.log(`✓ ${chatsAdded} public chats (${messagesAdded} messages)`);
+
+  // Character canon (history) — write events as a JSONB array on each row.
+  // The contradiction analyzer reads this; chat AI prompts read this too.
+  let canonAdded = 0;
+  for (const [name, events] of Object.entries(CANON)) {
+    const charId = characterIds[name];
+    if (!charId) continue;
+    // Stamp each event with a relative date if missing — backwards from now,
+    // 30 days apart, so they read as a real timeline rather than all-today.
+    const stamped = events.map((e, i) => ({
+      ...e,
+      date: e.date || new Date(Date.now() - (events.length - i) * 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+    await query(
+      `UPDATE characters SET history = $1 WHERE id = $2`,
+      [JSON.stringify(stamped), charId]
+    );
+    canonAdded += events.length;
+  }
+  console.log(`✓ ${canonAdded} canon events across ${Object.keys(CANON).length} characters`);
+
+  // Character relationships — bidirectional. We insert both (A→B) and (B→A)
+  // so each character page renders the link.
+  let relsAdded = 0;
+  for (const r of RELATIONSHIPS) {
+    const idA = characterIds[r.a];
+    const idB = characterIds[r.b];
+    if (!idA || !idB) continue;
+    try {
+      await query(
+        `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description, strength)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT DO NOTHING`,
+        [idA, idB, r.type, r.description || null, r.strength ?? 50]
+      );
+      await query(
+        `INSERT INTO character_relationships (character_id, related_character_id, relationship_type, description, strength)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT DO NOTHING`,
+        [idB, idA, r.type, r.description || null, r.strength ?? 50]
+      );
+      relsAdded += 2;
+    } catch (e: any) {
+      console.warn(`  skipped relationship ${r.a} ↔ ${r.b}: ${e?.message}`);
+    }
+  }
+  console.log(`✓ ${relsAdded} relationship rows`);
+
+  // Forum posts + replies. Categories already exist on prod (preseeded).
+  // We look them up by name and skip any post whose category isn't found.
+  const catRows = await query(`SELECT id, name FROM forum_categories`);
+  const catIds: Record<string, string> = {};
+  for (const c of catRows.rows) catIds[c.name] = c.id;
+
+  let postsAdded = 0;
+  let repliesAdded = 0;
+  for (const p of FORUM_POSTS) {
+    const catId = catIds[p.category];
+    const authorId = userIds[p.author];
+    if (!catId || !authorId) {
+      console.warn(`  skipped forum post "${p.title}" (missing category/author)`);
+      continue;
+    }
+    const createdAt = new Date(Date.now() - (p.daysAgo || 1) * 24 * 60 * 60 * 1000).toISOString();
+    const post = await query(
+      `INSERT INTO forum_posts (category_id, author_id, title, content, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $5)
+       RETURNING id`,
+      [catId, authorId, p.title, p.content, createdAt]
+    );
+    const postId = post.rows[0].id;
+    postsAdded++;
+
+    // Replies — stagger 4–8 hours apart starting from the post timestamp.
+    let replyTime = new Date(createdAt).getTime() + 4 * 60 * 60 * 1000;
+    for (const r of p.replies || []) {
+      const replyAuthorId = userIds[r.author];
+      if (!replyAuthorId) continue;
+      await query(
+        `INSERT INTO forum_replies (post_id, author_id, content, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $4)`,
+        [postId, replyAuthorId, r.content, new Date(replyTime).toISOString()]
+      );
+      replyTime += (4 + Math.random() * 4) * 60 * 60 * 1000;
+      repliesAdded++;
+    }
+    // Update post.reply_count
+    await query(
+      `UPDATE forum_posts SET reply_count = $1 WHERE id = $2`,
+      [p.replies?.length || 0, postId]
+    );
+    // Bump post updated_at to the latest reply for sensible sort order
+    if (p.replies && p.replies.length > 0) {
+      await query(
+        `UPDATE forum_posts SET updated_at = $1 WHERE id = $2`,
+        [new Date(replyTime - (4 + Math.random() * 4) * 60 * 60 * 1000).toISOString(), postId]
+      );
+    }
+  }
+  console.log(`✓ ${postsAdded} forum posts (${repliesAdded} replies)`);
 
   console.log('\nDone.');
   process.exit(0);

@@ -61,7 +61,26 @@ interface Paginated<T> {
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
-type TabKey = 'characters' | 'public-chats' | 'worlds';
+interface Campaign {
+  id: string;
+  name: string;
+  description: string | null;
+  premise: string | null;
+  status: 'draft' | 'active' | 'completed' | 'archived';
+  max_participants: number;
+  min_participants: number;
+  participant_count: string;
+  world_id: string;
+  world_name: string;
+  world_thumbnail: string | null;
+  world_setting: string | null;
+  creator_id: string;
+  creator_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+type TabKey = 'characters' | 'public-chats' | 'worlds' | 'campaigns';
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -81,7 +100,7 @@ function ExploreContent() {
 
   const initialTab = (searchParams.get('tab') as TabKey) || 'characters';
   const [tab, setTab] = useState<TabKey>(
-    ['characters', 'public-chats', 'worlds'].includes(initialTab) ? initialTab : 'characters'
+    ['characters', 'public-chats', 'worlds', 'campaigns'].includes(initialTab) ? initialTab : 'characters'
   );
 
   const setActiveTab = (t: TabKey) => {
@@ -135,6 +154,7 @@ function ExploreContent() {
               { key: 'characters', label: '🎭 Characters' },
               { key: 'public-chats', label: '🌐 Public Chats' },
               { key: 'worlds', label: '🌍 Worlds' },
+              { key: 'campaigns', label: '⚔️ Campaigns' },
             ] as { key: TabKey; label: string }[]
           ).map((t) => (
             <button
@@ -155,6 +175,7 @@ function ExploreContent() {
       {tab === 'characters' && <CharactersTab />}
       {tab === 'public-chats' && <PublicChatsTab />}
       {tab === 'worlds' && <WorldsTab user={user} />}
+      {tab === 'campaigns' && <CampaignsTab />}
     </div>
   );
 }
@@ -576,6 +597,173 @@ function WorldsTab({ user }: { user: any }) {
               <span className="px-4 py-2 text-sm text-slate-400">Page {page} of {totalPages}</span>
               <button
                 onClick={() => { setPage(page + 1); fetchWorlds(search, page + 1); }}
+                disabled={page === totalPages}
+                className="px-4 py-2 text-sm border border-slate-600 rounded-lg text-slate-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+// ——— Campaigns Tab ———
+function CampaignsTab() {
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const fetchCampaigns = async (searchQuery = '', status = '', pageNum = 1) => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(pageNum), limit: '12' });
+    if (searchQuery) params.set('search', searchQuery);
+    if (status) params.set('status', status);
+    const res = await api.get<Paginated<Campaign>>(`/api/campaigns?${params}`);
+    if (res.success && res.data) {
+      const d = res.data as any;
+      setCampaigns(d.data || []);
+      setTotalPages(d.pagination?.totalPages || 1);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchCampaigns('', statusFilter, 1);
+  }, [statusFilter]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPage(1);
+    fetchCampaigns(search, statusFilter, 1);
+  };
+
+  // Status pill colors mirror the campaign detail page so the visual language carries.
+  const statusPill: Record<string, string> = {
+    draft: 'bg-yellow-900/30 text-yellow-400 border-yellow-800/50',
+    active: 'bg-green-900/30 text-green-400 border-green-800/50',
+    completed: 'bg-blue-900/30 text-blue-400 border-blue-800/50',
+    archived: 'bg-slate-700 text-slate-400 border-slate-600/50',
+  };
+
+  return (
+    <>
+      {/* Search + status filter */}
+      <div className="mb-6 flex flex-col sm:flex-row gap-3">
+        <form onSubmit={handleSearch} className="flex gap-2 flex-1">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search campaigns by name, description, or premise..."
+            className="flex-1 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+          >
+            Search
+          </button>
+        </form>
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-amber-500"
+        >
+          <option value="">All statuses</option>
+          <option value="draft">Recruiting</option>
+          <option value="active">In progress</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Canon</option>
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-44 bg-slate-800/50 border border-slate-700/50 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : campaigns.length === 0 ? (
+        <div className="text-center py-16 text-slate-500">
+          <div className="text-4xl mb-3">⚔️</div>
+          <p>No campaigns yet.</p>
+          <p className="text-sm mt-2">Create one from the <Link href="/campaigns/create" className="text-amber-400 hover:text-amber-300">Create menu</Link>.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {campaigns.map((c) => {
+              const isCanon = c.status === 'archived';
+              return (
+                <Link
+                  key={c.id}
+                  href={`/campaigns/${c.id}`}
+                  className="p-5 bg-gradient-to-br from-amber-950/20 to-slate-800/40 border border-amber-900/30 rounded-xl hover:border-amber-500/50 transition-all hover:-translate-y-0.5 group"
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-2xl shrink-0 overflow-hidden ring-2 ring-amber-900/40">
+                      {c.world_thumbnail ? (
+                        <img src={c.world_thumbnail} alt="" className="w-full h-full object-cover" />
+                      ) : '⚔️'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h3 className="font-bold text-white group-hover:text-amber-300 transition-colors truncate">
+                          {c.name}
+                        </h3>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border uppercase tracking-wider ${statusPill[c.status]}`}>
+                          {isCanon ? 'Canon' : c.status === 'draft' ? 'Recruiting' : c.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        in <span className="text-amber-400">{c.world_name}</span>
+                        {' · '}by {c.creator_name}
+                      </p>
+                    </div>
+                  </div>
+
+                  {(c.description || c.premise) && (
+                    <p className="text-sm text-slate-400 line-clamp-2 mb-3">
+                      {c.description || c.premise}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/50">
+                      👥 {c.participant_count}/{c.max_participants}
+                    </span>
+                    {c.world_setting && (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-900/60 border border-slate-700/50 text-amber-400/80">
+                        {c.world_setting}
+                      </span>
+                    )}
+                    <span className="ml-auto">{timeAgo(c.updated_at)}</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex justify-center gap-2 mt-6">
+              <button
+                onClick={() => { const p = Math.max(1, page - 1); setPage(p); fetchCampaigns(search, statusFilter, p); }}
+                disabled={page === 1}
+                className="px-4 py-2 text-sm border border-slate-600 rounded-lg text-slate-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="px-4 py-2 text-sm text-slate-400">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => { const p = Math.min(totalPages, page + 1); setPage(p); fetchCampaigns(search, statusFilter, p); }}
                 disabled={page === totalPages}
                 className="px-4 py-2 text-sm border border-slate-600 rounded-lg text-slate-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >

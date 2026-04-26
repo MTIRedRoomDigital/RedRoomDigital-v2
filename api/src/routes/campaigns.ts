@@ -47,6 +47,70 @@ async function isWorldMasterOf(worldId: string, userId: string): Promise<boolean
 // ========== CAMPAIGN CRUD ==========
 
 /**
+ * GET /api/campaigns
+ * Browse public campaigns across all worlds. Powers the /explore Campaigns tab.
+ * Filters out NSFW campaigns and campaigns whose world is private.
+ * Optional ?search=, ?status=, ?page=, ?limit=.
+ */
+campaignRouter.get('/', async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 12, 50);
+    const offset = (page - 1) * limit;
+    const search = (req.query.search as string || '').trim();
+    const status = (req.query.status as string || '').trim();
+
+    let where = 'WHERE c.is_nsfw = false AND w.is_public = true AND w.is_nsfw = false';
+    const params: unknown[] = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      where += ` AND (c.name ILIKE $${params.length} OR c.description ILIKE $${params.length} OR c.premise ILIKE $${params.length})`;
+    }
+    if (status && ['draft', 'active', 'completed', 'archived'].includes(status)) {
+      params.push(status);
+      where += ` AND c.status = $${params.length}`;
+    }
+
+    const countRes = await query(
+      `SELECT COUNT(*) FROM campaigns c JOIN worlds w ON c.world_id = w.id ${where}`,
+      params
+    );
+    const total = parseInt(countRes.rows[0].count);
+
+    params.push(limit, offset);
+    const result = await query(
+      `SELECT c.id, c.name, c.description, c.premise, c.status,
+              c.max_participants, c.min_participants, c.created_at, c.updated_at,
+              w.id AS world_id, w.name AS world_name, w.thumbnail_url AS world_thumbnail,
+              w.setting AS world_setting,
+              u.id AS creator_id, u.username AS creator_name,
+              (SELECT COUNT(*) FROM campaign_participants cp WHERE cp.campaign_id = c.id) AS participant_count
+         FROM campaigns c
+         JOIN worlds w ON c.world_id = w.id
+         JOIN users u ON c.creator_id = u.id
+         ${where}
+         ORDER BY
+           CASE c.status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 WHEN 'completed' THEN 2 WHEN 'archived' THEN 3 END,
+           c.updated_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: {
+        data: result.rows,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      },
+    });
+  } catch (error: any) {
+    console.error('Browse campaigns error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
  * GET /api/campaigns/world/:worldId
  * Get all campaigns in a world (public — anyone can see)
  */
