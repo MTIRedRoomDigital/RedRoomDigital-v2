@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { connectSocket, disconnectSocket, getSocket } from '@/lib/socket';
 import Link from 'next/link';
+import { CharacterPanel, UserStrip } from '@/components/ChatSidebar';
 
 interface Message {
   id: string;
@@ -513,8 +514,27 @@ export default function ChatRoomPage() {
   const ctx = contextLabels[conversation.context] || contextLabels.vacuum;
   const chatMode = conversation.chat_mode || 'live';
 
+  // Side panels show participant 0 on the left, participant 1 on the right.
+  // For the viewer's own chats, this naturally puts "you" on whichever side
+  // the database returned first — we don't reorder, since the conversation
+  // page already labels "Chatting as {myCharacter}" in the header. Public
+  // chats have no viewer-side preference, which is the point.
+  const leftParticipant = conversation.participants[0];
+  const rightParticipant = conversation.participants[1];
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
+      {/* Main row: left panel | center chat | right panel */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        {/* Left character panel — desktop only */}
+        {leftParticipant && (
+          <aside className="hidden lg:block w-72 xl:w-80 shrink-0 border-r border-slate-700/50 bg-slate-900/40 overflow-y-auto">
+            <CharacterPanel characterId={leftParticipant.character_id} side="left" />
+          </aside>
+        )}
+
+        {/* Center column: existing chat content */}
+        <div className="flex flex-col flex-1 min-w-0">
       {/* Chat Header */}
       <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
@@ -966,6 +986,25 @@ export default function ChatRoomPage() {
           </div>
         </div>
       )}
+        {/* End of center column */}
+        </div>
+
+        {/* Right character panel — desktop only */}
+        {rightParticipant && (
+          <aside className="hidden lg:block w-72 xl:w-80 shrink-0 border-l border-slate-700/50 bg-slate-900/40 overflow-y-auto">
+            <CharacterPanel characterId={rightParticipant.character_id} side="right" />
+          </aside>
+        )}
+      </div>
+      {/* End of main row */}
+
+      {/* User identity strip — both participants' user info, hidden on mobile */}
+      <div className="hidden md:block">
+        <UserStrip
+          leftUserId={leftParticipant?.user_id}
+          rightUserId={rightParticipant?.user_id}
+        />
+      </div>
 
       {/* End Chat Confirmation Modal */}
       {showEndConfirm && (
