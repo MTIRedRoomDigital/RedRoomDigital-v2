@@ -767,15 +767,25 @@ export default function ChatRoomPage() {
           <div className="text-center py-4">
             <p className="text-xs text-slate-500">
               Conversation started between{' '}
-              <span className="text-slate-400">{myParticipant?.character_name}</span>
+              <span className="text-slate-400">{leftParticipant?.character_name}</span>
               {' and '}
-              <span className="text-slate-400">{partnerParticipant?.character_name}</span>
+              <span className="text-slate-400">{rightParticipant?.character_name}</span>
             </p>
           </div>
 
           {/* Messages */}
           {messages.map((msg) => {
-            const isMe = msg.sender_user_id === user?.id;
+            // Right-side rendering rule:
+            //   - If viewer IS a participant: their own messages go on the right
+            //     ("you on the right" — the long-standing chat convention).
+            //   - If viewer is NOT a participant (public chat reader): use the
+            //     panel layout as the source of truth — rightParticipant's
+            //     messages render on the right. Otherwise a public chat would
+            //     stack everything on the left and look broken.
+            const isOnRight = myParticipant
+              ? msg.sender_user_id === user?.id
+              : msg.sender_character_id === rightParticipant?.character_id;
+            const isMe = isOnRight;
 
             // System messages (e.g., takeover notifications)
             if (msg.sender_type === 'system') {
@@ -953,12 +963,14 @@ export default function ChatRoomPage() {
           <div className="max-w-3xl mx-auto text-center space-y-2">
             <p className="text-slate-500 text-sm">This conversation has ended.</p>
 
-            {/* Canon status or request button */}
+            {/* Canon status or request button — participants only.
+                Public-chat readers who weren't in the conversation see only
+                the canon status if it's already canon. They can't request
+                changes to a chat they weren't part of. */}
             {conversation.is_canon ? (
               <p className="text-sm text-amber-400 font-medium">📜 This conversation is canon</p>
-            ) : (
+            ) : myParticipant ? (
               <>
-                {/* Canon request button — only after chat ends, with enough messages */}
                 {messages.length >= 2 && !canonRequestSent && (
                   <button
                     onClick={handleCanonRequest}
@@ -976,7 +988,7 @@ export default function ChatRoomPage() {
                   </p>
                 )}
               </>
-            )}
+            ) : null}
 
             <div>
               <Link href="/chats" className="text-xs text-red-400 hover:text-red-300 transition-colors inline-block">
