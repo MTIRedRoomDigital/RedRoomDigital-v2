@@ -66,26 +66,53 @@ interface CampaignSeed {
 // ──────────────────────────────────────────────────────────────────────
 // USERS
 // ──────────────────────────────────────────────────────────────────────
+// Internet-style anonymous handles. Mix of nature compounds, regional handles,
+// number suffixes, aesthetic words — never first/last name patterns.
 const USERS: UserSeed[] = [
-  { username: 'mara_calderon', email: 'mara' + SEED_EMAIL_DOMAIN, bio: 'Tabletop GM since 2014. I write villains and let other people write heroes.', subscription: 'ultimate' },
-  { username: 'oliver_quist', email: 'oliver' + SEED_EMAIL_DOMAIN, bio: 'Speculative fiction writer. Currently obsessed with collapse-era settings.', subscription: 'premium' },
-  { username: 'rin_takeda', email: 'rin' + SEED_EMAIL_DOMAIN, bio: 'I make characters whose biggest enemy is themselves.', subscription: 'premium' },
-  { username: 'theodore_ash', email: 'theo' + SEED_EMAIL_DOMAIN, bio: 'Detectives, drifters, people on the wrong side of the right thing.', subscription: 'free' },
-  { username: 'priya_navarro', email: 'priya' + SEED_EMAIL_DOMAIN, bio: 'Worldbuilder. Pixel artist. Tea drinker. In that order.', subscription: 'ultimate' },
-  { username: 'cole_winters', email: 'cole' + SEED_EMAIL_DOMAIN, bio: 'Sci-fi mostly. The kind where the tech is broken and so are the people.', subscription: 'free' },
-  { username: 'isabela_drake', email: 'isabela' + SEED_EMAIL_DOMAIN, bio: 'Long-form RP only. If you can\'t commit to three paragraphs, we\'re not gonna work.', subscription: 'premium' },
-  { username: 'marcus_hale', email: 'marcus' + SEED_EMAIL_DOMAIN, bio: 'Historical fiction. Mostly 1920s and 30s. Sometimes I\'ll do a western.', subscription: 'free' },
-  { username: 'nadia_reeve', email: 'nadia' + SEED_EMAIL_DOMAIN, bio: 'Horror, body horror, slow-burn dread. Don\'t @ me about jump scares.', subscription: 'premium' },
-  { username: 'samir_okafor', email: 'samir' + SEED_EMAIL_DOMAIN, bio: 'Solarpunk. Optimism is a craft. Open to collabs.', subscription: 'free' },
-  { username: 'eliza_voss', email: 'eliza' + SEED_EMAIL_DOMAIN, bio: 'Court intrigue, betrayal, slow poison. Nobles and the people who clean up after them.', subscription: 'premium' },
-  { username: 'jp_morales', email: 'jp' + SEED_EMAIL_DOMAIN, bio: 'Just here to play a guy who fixes motorcycles in a fantasy world that doesn\'t have them yet.', subscription: 'free' },
-  { username: 'kira_lindqvist', email: 'kira' + SEED_EMAIL_DOMAIN, bio: 'I write women who would absolutely commit crimes for the right reasons.', subscription: 'ultimate' },
-  { username: 'desmond_cho', email: 'desmond' + SEED_EMAIL_DOMAIN, bio: 'Heist plots, con artists, and people who lie professionally.', subscription: 'free' },
-  { username: 'aaliyah_freeman', email: 'aaliyah' + SEED_EMAIL_DOMAIN, bio: 'I want my characters to feel like real people who happen to live in a world that isn\'t.', subscription: 'premium' },
-  { username: 'nikolai_brandt', email: 'nikolai' + SEED_EMAIL_DOMAIN, bio: 'GM. Quiet types. Guys who say one line and mean three things.', subscription: 'free' },
-  { username: 'beth_holloway', email: 'beth' + SEED_EMAIL_DOMAIN, bio: 'Slice of life with bite. Will write your retired wizard who runs a bookshop.', subscription: 'free' },
-  { username: 'ruben_vasquez', email: 'ruben' + SEED_EMAIL_DOMAIN, bio: 'Cyberpunk. Cops, runners, the people in between.', subscription: 'premium' },
+  { username: 'hexpriestess', email: 'hexpriestess' + SEED_EMAIL_DOMAIN, bio: 'Tabletop GM since 2014. I write villains and let other people write heroes.', subscription: 'ultimate' },
+  { username: 'collapseera', email: 'collapseera' + SEED_EMAIL_DOMAIN, bio: 'Speculative fiction writer. Currently obsessed with collapse-era settings.', subscription: 'premium' },
+  { username: 'glassbones', email: 'glassbones' + SEED_EMAIL_DOMAIN, bio: 'I make characters whose biggest enemy is themselves.', subscription: 'premium' },
+  { username: 'wrongsideoftheright', email: 'wrongside' + SEED_EMAIL_DOMAIN, bio: 'Detectives, drifters, people on the wrong side of the right thing.', subscription: 'free' },
+  { username: 'pixeltea', email: 'pixeltea' + SEED_EMAIL_DOMAIN, bio: 'Worldbuilder. Pixel artist. Tea drinker. In that order.', subscription: 'ultimate' },
+  { username: 'brokentech_22', email: 'brokentech' + SEED_EMAIL_DOMAIN, bio: 'Sci-fi mostly. The kind where the tech is broken and so are the people.', subscription: 'free' },
+  { username: 'threeparagraphsmin', email: 'threepara' + SEED_EMAIL_DOMAIN, bio: 'Long-form RP only. If you can\'t commit to three paragraphs, we\'re not gonna work.', subscription: 'premium' },
+  { username: 'twentiesnoir', email: 'twentiesnoir' + SEED_EMAIL_DOMAIN, bio: 'Historical fiction. Mostly 1920s and 30s. Sometimes I\'ll do a western.', subscription: 'free' },
+  { username: 'slowburn_dread', email: 'slowburn' + SEED_EMAIL_DOMAIN, bio: 'Horror, body horror, slow-burn dread. Don\'t @ me about jump scares.', subscription: 'premium' },
+  { username: 'solarpunk_atx', email: 'solarpunk' + SEED_EMAIL_DOMAIN, bio: 'Solarpunk. Optimism is a craft. Open to collabs.', subscription: 'free' },
+  { username: 'slowpoisongirl', email: 'slowpoison' + SEED_EMAIL_DOMAIN, bio: 'Court intrigue, betrayal, slow poison. Nobles and the people who clean up after them.', subscription: 'premium' },
+  { username: 'wrenchgoblin', email: 'wrenchgoblin' + SEED_EMAIL_DOMAIN, bio: 'Just here to play a guy who fixes motorcycles in a fantasy world that doesn\'t have them yet.', subscription: 'free' },
+  { username: 'felonyforlove', email: 'felonyforlove' + SEED_EMAIL_DOMAIN, bio: 'I write women who would absolutely commit crimes for the right reasons.', subscription: 'ultimate' },
+  { username: 'conartistprep', email: 'conartistprep' + SEED_EMAIL_DOMAIN, bio: 'Heist plots, con artists, and people who lie professionally.', subscription: 'free' },
+  { username: 'mothbrain', email: 'mothbrain' + SEED_EMAIL_DOMAIN, bio: 'I want my characters to feel like real people who happen to live in a world that isn\'t.', subscription: 'premium' },
+  { username: 'onelinerguy', email: 'onelinerguy' + SEED_EMAIL_DOMAIN, bio: 'GM. Quiet types. Guys who say one line and mean three things.', subscription: 'free' },
+  { username: 'retiredwizard', email: 'retiredwizard' + SEED_EMAIL_DOMAIN, bio: 'Slice of life with bite. Will write your retired wizard who runs a bookshop.', subscription: 'free' },
+  { username: 'rainbeats', email: 'rainbeats' + SEED_EMAIL_DOMAIN, bio: 'Cyberpunk. Cops, runners, the people in between.', subscription: 'premium' },
 ];
+
+// Map old → new username for the WORLDS / CHARACTERS / CAMPAIGNS / FRIENDSHIPS /
+// WORLD_MEMBERS arrays below. This lets me change handles without rewriting
+// every reference. (All the reference arrays use the OLD names; we translate.)
+const HANDLE_MAP: Record<string, string> = {
+  mara_calderon: 'hexpriestess',
+  oliver_quist: 'collapseera',
+  rin_takeda: 'glassbones',
+  theodore_ash: 'wrongsideoftheright',
+  priya_navarro: 'pixeltea',
+  cole_winters: 'brokentech_22',
+  isabela_drake: 'threeparagraphsmin',
+  marcus_hale: 'twentiesnoir',
+  nadia_reeve: 'slowburn_dread',
+  samir_okafor: 'solarpunk_atx',
+  eliza_voss: 'slowpoisongirl',
+  jp_morales: 'wrenchgoblin',
+  kira_lindqvist: 'felonyforlove',
+  desmond_cho: 'conartistprep',
+  aaliyah_freeman: 'mothbrain',
+  nikolai_brandt: 'onelinerguy',
+  beth_holloway: 'retiredwizard',
+  ruben_vasquez: 'rainbeats',
+};
+const h = (oldName: string) => HANDLE_MAP[oldName] || oldName;
 
 // ──────────────────────────────────────────────────────────────────────
 // WORLDS
@@ -551,6 +578,130 @@ const WORLD_MEMBERS: { world: string; user: string }[] = [
 ];
 
 // ──────────────────────────────────────────────────────────────────────
+// PUBLIC CHATS
+// Short hand-authored exchanges between two characters. Each one stays in
+// character voice — Sheriff Doolan sounds like Doolan, Vex sounds like Vex.
+// Kept short (8-12 messages) so they read as a slice rather than a saga.
+// ──────────────────────────────────────────────────────────────────────
+interface PublicChat {
+  title: string;
+  characters: [string, string]; // character names from CHARACTERS above
+  world?: string;
+  messages: { from: 'A' | 'B'; text: string }[];
+}
+
+const PUBLIC_CHATS: PublicChat[] = [
+  {
+    title: 'The Diner, 4 AM',
+    characters: ['Sheriff Maeve Doolan', 'Reverend Dale Marston'],
+    world: 'Drowsing County',
+    messages: [
+      { from: 'A', text: 'Coffee\'s burnt again. Janelle\'s shift?' },
+      { from: 'B', text: 'She\'s in the back. I think she\'s been crying.' },
+      { from: 'A', text: 'You ask her?' },
+      { from: 'B', text: 'No. She doesn\'t want me to. I respect that.' },
+      { from: 'A', text: 'You see anyone come in tonight?' },
+      { from: 'B', text: 'A man in booth four. Black coffee. He didn\'t drink it. He didn\'t leave money.' },
+      { from: 'A', text: 'Did he look at you?' },
+      { from: 'B', text: 'He looked at the door. Like he was waiting on someone.' },
+      { from: 'A', text: 'Yeah. I know that one. He was there when Tom went in.' },
+      { from: 'B', text: 'Maeve.' },
+      { from: 'A', text: 'I know, Dale. I know.' },
+    ],
+  },
+  {
+    title: 'Below the Hydroponics Deck',
+    characters: ['Archivist Wen Tobari', 'Reesha Ndovu'],
+    world: 'Helio-9',
+    messages: [
+      { from: 'A', text: 'You said the temperature went up four degrees. In a week?' },
+      { from: 'B', text: 'Four point one. The sensors haven\'t flagged because the trend is gradual.' },
+      { from: 'A', text: 'Has it ever changed before?' },
+      { from: 'B', text: 'Not in my grandmother\'s logs. Not in mine.' },
+      { from: 'A', text: 'I think the inscription is a warning, not a name.' },
+      { from: 'B', text: 'A warning about what.' },
+      { from: 'A', text: 'I have one verb so far. The verb is "to wake."' },
+      { from: 'B', text: '...' },
+      { from: 'B', text: 'Tobari, do not file that paper. Not yet.' },
+      { from: 'A', text: 'I was going to ask you the same thing.' },
+    ],
+  },
+  {
+    title: 'The Rain at the Cart',
+    characters: ['Detective Mei "Mai" Cheng', 'Booker Tan'],
+    world: 'Neo-Taipei 2089',
+    messages: [
+      { from: 'A', text: 'You knew him twelve years.' },
+      { from: 'B', text: 'Yeah.' },
+      { from: 'A', text: 'And you\'re telling me he wasn\'t doing unlicensed work.' },
+      { from: 'B', text: 'I\'m telling you he wouldn\'t. He had a daughter. He paid his license fees. I helped him with the paperwork in February.' },
+      { from: 'A', text: 'Helix says the raid was clean.' },
+      { from: 'B', text: 'Helix says a lot of things.' },
+      { from: 'A', text: 'The girl. Where is she now.' },
+      { from: 'B', text: 'In the back of my shop. She brought his ledger.' },
+      { from: 'A', text: 'Show me the ledger, Booker.' },
+      { from: 'B', text: 'You sure?' },
+      { from: 'A', text: 'My brother\'s case is the reason I\'m sure.' },
+    ],
+  },
+  {
+    title: 'The Bookshop Above the Stable',
+    characters: ['Cardinal Iohanna Vell', 'Old Auntie Thessa'],
+    world: 'The Sundered Vale',
+    messages: [
+      { from: 'B', text: 'You walk like the Cardinal you used to be.' },
+      { from: 'A', text: 'I\'m not the Cardinal I used to be.' },
+      { from: 'B', text: 'I know. I\'m saying it shows.' },
+      { from: 'A', text: 'I came for the almanac. Not commentary.' },
+      { from: 'B', text: 'The almanac is on the third shelf. The commentary is free.' },
+      { from: 'A', text: 'Thessa.' },
+      { from: 'B', text: 'Iohanna. The river is up two feet this month.' },
+      { from: 'A', text: 'I noticed.' },
+      { from: 'B', text: 'You came down to the bridge last night. I watched.' },
+      { from: 'A', text: 'I was looking for someone.' },
+      { from: 'B', text: 'Did you find him.' },
+      { from: 'A', text: 'I never do.' },
+    ],
+  },
+  {
+    title: 'Salon, Late Thursday',
+    characters: ['Donna Cellaria di March', 'Renzo of Five Names'],
+    world: 'The Vermillion Court',
+    messages: [
+      { from: 'A', text: 'You\'re late, Renzo.' },
+      { from: 'B', text: 'I was at three salons before this one, Donna.' },
+      { from: 'A', text: 'And whose work were you doing at the others?' },
+      { from: 'B', text: 'Yours, mostly. The Velli think they hired me but the handwriting is yours.' },
+      { from: 'A', text: 'Good. And the third client?' },
+      { from: 'B', text: 'I don\'t know yet. The pay is in old coin. The handwriting on the contract is something I haven\'t seen before.' },
+      { from: 'A', text: 'Bring me the contract.' },
+      { from: 'B', text: 'I can\'t. It was retrieved this afternoon.' },
+      { from: 'A', text: 'By whom.' },
+      { from: 'B', text: 'A boy. Twelve, maybe thirteen. He took it back and left.' },
+      { from: 'A', text: 'That\'s how it starts. Stay close, Renzo.' },
+    ],
+  },
+  {
+    title: 'The Translation, Late',
+    characters: ['Dr. Ines Albright', 'Walt Brennan'],
+    messages: [
+      { from: 'A', text: 'I\'m sorry to write so late. Your name was given to me by a colleague.' },
+      { from: 'B', text: 'Don\'t apologize. What\'s the matter, Doctor?' },
+      { from: 'A', text: 'Someone\'s been in my office. Nothing was taken. The notebook was moved.' },
+      { from: 'B', text: 'Which notebook.' },
+      { from: 'A', text: 'The one with the translation work. The pottery inscription.' },
+      { from: 'B', text: 'You sure it was moved? Not just shifted?' },
+      { from: 'A', text: 'I keep it under a paperweight. The paperweight was set down on the desk afterward, not put back.' },
+      { from: 'B', text: 'Anyone else have a key.' },
+      { from: 'A', text: 'My supervisor. Two grad students. The night cleaner.' },
+      { from: 'B', text: 'I\'ll come by Wednesday morning. Don\'t move anything else. And keep the notebook on you.' },
+      { from: 'A', text: 'Thank you. Really.' },
+      { from: 'B', text: 'Don\'t thank me yet.' },
+    ],
+  },
+];
+
+// ──────────────────────────────────────────────────────────────────────
 // Run
 // ──────────────────────────────────────────────────────────────────────
 async function main() {
@@ -563,9 +714,23 @@ async function main() {
     ['%' + SEED_EMAIL_DOMAIN]
   );
   for (const u of oldUsers.rows) {
-    await query(`DELETE FROM users WHERE id = $1`, [u.id]); // CASCADE handles the rest
+    await query(`DELETE FROM users WHERE id = $1`, [u.id]); // CASCADE handles characters/worlds/messages
   }
   console.log(`  removed ${oldUsers.rows.length} prior seed users`);
+
+  // CASCADE on the user delete leaves orphaned conversations (no FK to users
+  // on the conversations table, only via participants). Clean any conversation
+  // that no longer has any participants — safe and bounded.
+  const orphanCleanup = await query(
+    `DELETE FROM conversations
+      WHERE NOT EXISTS (
+        SELECT 1 FROM conversation_participants cp WHERE cp.conversation_id = conversations.id
+      )
+      RETURNING id`
+  );
+  if (orphanCleanup.rows.length > 0) {
+    console.log(`  removed ${orphanCleanup.rows.length} orphaned conversations`);
+  }
 
   // Hash one shared password — these are seed accounts, not real users.
   const sharedHash = await bcrypt.hash('seed-account-do-not-use', 10);
@@ -591,18 +756,20 @@ async function main() {
       `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, is_nsfw, member_count)
        VALUES ($1, $2, $3, $4, $5, $6, true, false, 1)
        RETURNING id`,
-      [userIds[w.creator], w.name, w.description, w.lore, JSON.stringify(w.rules), w.setting]
+      [userIds[h(w.creator)], w.name, w.description, w.lore, JSON.stringify(w.rules), w.setting]
     );
     worldIds[w.name] = r.rows[0].id;
     // Creator becomes WorldMaster
     await query(
       `INSERT INTO world_members (world_id, user_id, is_worldmaster) VALUES ($1, $2, true)`,
-      [r.rows[0].id, userIds[w.creator]]
+      [r.rows[0].id, userIds[h(w.creator)]]
     );
   }
   console.log(`✓ ${WORLDS.length} worlds`);
 
-  // Insert characters
+  // Insert characters and remember their IDs by name (for public chats below).
+  const characterIds: Record<string, string> = {};
+  const characterCreators: Record<string, string> = {}; // name → user id (for conv_participants)
   for (const c of CHARACTERS) {
     const personality = {
       traits: c.traits,
@@ -610,20 +777,23 @@ async function main() {
       flaws: c.flaws,
       speaking_style: c.speaking_style,
     };
-    await query(
+    const r = await query(
       `INSERT INTO characters
         (creator_id, name, description, personality, background,
          likes, dislikes, world_id, is_public, is_nsfw, is_ai_enabled, tags,
          chat_count, like_count)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, false, true, $9, $10, $11)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, false, true, $9, $10, $11)
+       RETURNING id`,
       [
-        userIds[c.creator], c.name, c.description,
+        userIds[h(c.creator)], c.name, c.description,
         JSON.stringify(personality), c.background,
         JSON.stringify(c.likes), JSON.stringify(c.dislikes),
         c.world ? worldIds[c.world] : null,
         c.tags, c.chat_count || 0, c.like_count || 0,
       ]
     );
+    characterIds[c.name] = r.rows[0].id;
+    characterCreators[c.name] = userIds[h(c.creator)];
   }
   console.log(`✓ ${CHARACTERS.length} characters`);
 
@@ -633,7 +803,7 @@ async function main() {
       await query(
         `INSERT INTO world_members (world_id, user_id, is_worldmaster) VALUES ($1, $2, false)
          ON CONFLICT DO NOTHING`,
-        [worldIds[m.world], userIds[m.user]]
+        [worldIds[m.world], userIds[h(m.user)]]
       );
       await query(
         `UPDATE worlds SET member_count = member_count + 1 WHERE id = $1`,
@@ -653,7 +823,7 @@ async function main() {
          max_participants, min_participants, sort_order, is_nsfw)
        VALUES ($1, $2, $3, $4, $5, $6, 6, 2, 0, false)`,
       [
-        worldIds[camp.world], userIds[camp.creator],
+        worldIds[camp.world], userIds[h(camp.creator)],
         camp.name, camp.description, camp.premise,
         camp.status || 'draft',
       ]
@@ -661,13 +831,11 @@ async function main() {
   }
   console.log(`✓ ${CAMPAIGNS.length} campaigns`);
 
-  // Friendships (status accepted)
-  // Try the canonical schema (requester_id / addressee_id) first; fall back
-  // to user_id / friend_id for older deployments.
+  // Friendships (accepted)
   let friendshipsAdded = 0;
   for (const [a, b] of FRIENDSHIPS) {
-    const ua = userIds[a];
-    const ub = userIds[b];
+    const ua = userIds[h(a)];
+    const ub = userIds[h(b)];
     if (!ua || !ub) continue;
     try {
       await query(
@@ -692,6 +860,64 @@ async function main() {
     }
   }
   console.log(`✓ ${friendshipsAdded} friendships`);
+
+  // Public chats — short hand-authored conversations between seed characters.
+  // Each is_public=true with mutual consent already granted. Goes into
+  // /explore/public-chats so first-time visitors have something to read.
+  let chatsAdded = 0;
+  let messagesAdded = 0;
+  for (const chat of PUBLIC_CHATS) {
+    const charA = characterIds[chat.characters[0]];
+    const charB = characterIds[chat.characters[1]];
+    if (!charA || !charB) {
+      console.warn(`  skipped public chat (missing character): ${chat.title}`);
+      continue;
+    }
+    const userA = characterCreators[chat.characters[0]];
+    const userB = characterCreators[chat.characters[1]];
+    const worldId = chat.world ? worldIds[chat.world] : null;
+    const context = chat.world ? 'within_world' : 'vacuum';
+
+    const conv = await query(
+      `INSERT INTO conversations
+        (context, world_id, title, is_active, chat_mode, is_public)
+       VALUES ($1, $2, $3, false, 'live', true)
+       RETURNING id`,
+      [context, worldId, chat.title]
+    );
+    const convId = conv.rows[0].id;
+
+    await query(
+      `INSERT INTO conversation_participants (conversation_id, character_id, user_id) VALUES ($1, $2, $3)`,
+      [convId, charA, userA]
+    );
+    await query(
+      `INSERT INTO conversation_participants (conversation_id, character_id, user_id) VALUES ($1, $2, $3)`,
+      [convId, charB, userB]
+    );
+
+    // Stagger message timestamps two minutes apart so they read like a real
+    // conversation instead of all-at-once.
+    let baseTime = Date.now() - chat.messages.length * 2 * 60 * 1000;
+    for (const m of chat.messages) {
+      const charId = m.from === 'A' ? charA : charB;
+      const userId = m.from === 'A' ? userA : userB;
+      await query(
+        `INSERT INTO messages
+          (conversation_id, sender_character_id, sender_user_id, sender_type, content, created_at)
+         VALUES ($1, $2, $3, 'user', $4, $5)`,
+        [convId, charId, userId, m.text, new Date(baseTime).toISOString()]
+      );
+      baseTime += 2 * 60 * 1000;
+      messagesAdded++;
+    }
+
+    // Update conversation timestamp + chat_count on each character
+    await query(`UPDATE conversations SET updated_at = $1 WHERE id = $2`, [new Date(baseTime).toISOString(), convId]);
+    await query(`UPDATE characters SET chat_count = chat_count + 1 WHERE id = $1 OR id = $2`, [charA, charB]);
+    chatsAdded++;
+  }
+  console.log(`✓ ${chatsAdded} public chats (${messagesAdded} messages)`);
 
   console.log('\nDone.');
   process.exit(0);
