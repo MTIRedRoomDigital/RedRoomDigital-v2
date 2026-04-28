@@ -262,7 +262,7 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
       }
     }
 
-    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode, is_nsfw } = req.body;
+    const { name, description, lore, rules, setting, is_public, banner_url, thumbnail_url, join_mode, is_nsfw, bible } = req.body;
 
     // Moderation gate — re-scan only when content changed or transitioning to public
     const fullRes = await query('SELECT * FROM worlds WHERE id = $1', [worldId]);
@@ -308,10 +308,15 @@ worldRouter.put('/:id', authenticate, async (req: AuthRequest, res: Response) =>
         banner_url = COALESCE($7, banner_url),
         thumbnail_url = COALESCE($8, thumbnail_url),
         join_mode = COALESCE($9, join_mode),
-        is_nsfw = $11
+        is_nsfw = $11,
+        bible = COALESCE($12, bible)
        WHERE id = $10
        RETURNING *`,
-      [name, description, lore, rules ? JSON.stringify(rules) : null, setting, finalIsPublic, banner_url, thumbnail_url, join_mode, worldId, finalIsNsfw]
+      [
+        name, description, lore, rules ? JSON.stringify(rules) : null, setting,
+        finalIsPublic, banner_url, thumbnail_url, join_mode, worldId, finalIsNsfw,
+        bible !== undefined ? JSON.stringify(bible) : null,
+      ]
     );
 
     res.json({

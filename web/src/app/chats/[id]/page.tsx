@@ -514,13 +514,19 @@ export default function ChatRoomPage() {
   const ctx = contextLabels[conversation.context] || contextLabels.vacuum;
   const chatMode = conversation.chat_mode || 'live';
 
-  // Side panels show participant 0 on the left, participant 1 on the right.
-  // For the viewer's own chats, this naturally puts "you" on whichever side
-  // the database returned first — we don't reorder, since the conversation
-  // page already labels "Chatting as {myCharacter}" in the header. Public
-  // chats have no viewer-side preference, which is the point.
-  const leftParticipant = conversation.participants[0];
-  const rightParticipant = conversation.participants[1];
+  // Panel + message-side rule:
+  //   - When the viewer is a participant, their character ALWAYS sits on the
+  //     right (next to the input bar — "you on the right" matches the
+  //     direction their messages send from).
+  //   - When the viewer is not a participant (public chat reader), use the
+  //     raw database order. Both sides are equally "not me" so we don't
+  //     reorder — keeps a consistent reading experience for visitors.
+  const leftParticipant = myParticipant
+    ? partnerParticipant
+    : conversation.participants[0];
+  const rightParticipant = myParticipant
+    ? myParticipant
+    : conversation.participants[1];
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">

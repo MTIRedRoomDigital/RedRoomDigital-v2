@@ -378,9 +378,17 @@ export default function WorldDetailPage() {
             <p className="text-slate-300 mt-1">{world.description}</p>
           )}
 
-          <div className="flex items-center gap-4 mt-3 text-sm text-slate-500">
+          <div className="flex items-center gap-4 mt-3 text-sm text-slate-500 flex-wrap">
             <span>Created by <Link href={`/users/${world.creator_id}`} className="text-slate-300 hover:text-red-400 transition-colors">{world.creator_name}</Link></span>
             <span>{new Date(world.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+            {/* Bible link — visible to anyone, the page itself handles empty state */}
+            <Link
+              href={`/worlds/${world.id}/bible`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-800/50 hover:bg-amber-900/50 hover:text-amber-300 transition-colors"
+              title="World Bible — deep lore, history, glossary"
+            >
+              📖 Bible
+            </Link>
           </div>
         </div>
 

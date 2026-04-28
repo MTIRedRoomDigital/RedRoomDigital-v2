@@ -818,6 +818,375 @@ const FORUM_POSTS: ForumPostSeed[] = [
   },
 ];
 // ──────────────────────────────────────────────────────────────────────
+// WORLD BIBLES
+// Each world gets a hand-authored Bible (sections of deep lore). World
+// creators can edit / add / reorder these in /worlds/:id/bible/edit.
+// Sections are stored as JSONB on worlds.bible.
+// ──────────────────────────────────────────────────────────────────────
+interface BibleSection {
+  id: string;
+  icon: string;
+  title: string;
+  blurb: string;
+  body: string;
+}
+
+const BIBLES: Record<string, BibleSection[]> = {
+  'The Sundered Vale': [
+    {
+      id: 'overview', icon: '🌍', title: 'Overview',
+      blurb: 'A borderland nobody owns and the river that won\'t stop burning.',
+      body: `The Sundered Vale is a stretch of contested borderland between two dying empires — Aurelis to the north and the Khelmri Princes to the south. Sixty years ago a magical attempt to unmake a god failed at the Vale's central river, and the river caught fire. The flame doesn't consume, doesn't warm; it simply burns, day and night, summer and winter.
+
+The Vale's towns answer to the river-keepers, a loose mendicant order that pulls the dead from the burning water. Both empires claim the Vale. Neither can collect taxes there. Most adventurers in the Vale are deserters, debt-runaways, or sons no one will inherit.`,
+    },
+    {
+      id: 'history', icon: '📜', title: 'History',
+      blurb: 'The fire and what came before.',
+      body: `Before the Sundering, the Vale was an Aurelisi tributary state, a quiet stretch of farmland and forge-villages along the Vass river. The Khelmri raided it for grain. The Aurelisi held it for the same reason. It changed hands a dozen times in two centuries.
+
+In the year 743 by the Aurelisi count, Mage-Cardinal Olvar attempted a working at Saatren Bridge meant to bind a hostile war-god out of mortal reach forever. The working failed. The river caught fire that night. Olvar died standing. His apprentice survived with the loss of her right arm — Cardinal Iohanna Vell, then twenty-three years old.
+
+Both empires withdrew their administrators within a year. Tax collectors stopped coming. The river-keepers, who had been a small almsgiving order, took up the burden of pulling the dead from the burning water and have done so ever since. They do not call themselves priests. They do not accept donations larger than a meal.`,
+    },
+    {
+      id: 'geography', icon: '🗺️', title: 'Geography',
+      blurb: 'Towns, the river, the things between them.',
+      body: `The Vale runs roughly seventy miles east-to-west along the Vass river. North bank: Aurelisi farmland giving way to forest. South bank: Khelmri grasslands giving way to badlands. Neither bank is safe after dark in the lower Vale.
+
+GREYBURN-ON-VALE — the largest town, perhaps four hundred souls. Mixed Aurelisi-Khelmri population, the only place in the Vale that holds a market. Auntie Thessa's bookshop sits above the stable on the north end of the high street.
+
+THE BURNING RIVER — the Vass itself, lit end to end. Cold to the touch despite the flame. Fish still live in it, swim through the fire as if it isn't there. The river-keepers' main station sits at the old Saatren Bridge, mid-vale.
+
+THE EAST WOODS — uncut forest above the upper Vale. Khelmri deserters favor it. So does at least one thing the deserters won't talk about.
+
+HAEL'S CROSSING — a fortified granary three days east of Greyburn, abandoned after the orders that broke Fenrik. Now used by smugglers and the occasional river-keeper.`,
+    },
+    {
+      id: 'factions', icon: '⚔️', title: 'Factions',
+      blurb: 'Who runs what, where they meet.',
+      body: `THE RIVER-KEEPERS — the closest thing the Vale has to authority. Pull bodies from the river. Read futures in the way they float. Take in orphans. Carry no titles. Brenn Two-Coat is one.
+
+THE AURELISI INQUEST — when the crown wants something done in the Vale they send an inquisitor with two clerks and a writ. Inquests rarely find what they came for. They sometimes don't return.
+
+THE KHELMRI PRINCES — three brothers ruling the southern grasslands. Officially they claim the Vale. Practically, they raid the lower Vale once a year and pretend the rest doesn't exist.
+
+THE BURNED — what people call those who have spent too long near the river. Quieter than they were before. Thinner. They don't all stay sane. River-keepers watch them. Sometimes they take them in.`,
+    },
+    {
+      id: 'magic', icon: '✨', title: 'Magic',
+      blurb: 'Pact-based, borrowed, with interest.',
+      body: `All magic in the Vale is pact-based. The caster borrows power from a source — a god, a place, an older mage's residue, the river itself — and must return what they took, sometimes with interest. Wizards age oddly: some run backwards a few years; some go grey in a season; one, the river-keepers say, never aged at all and now lives in a cottage past Greyburn that no road reaches.
+
+DECLARED PACTS are required of any character claiming magical ability. Most caster-deserters in the Vale carry an unpaid debt; this is part of what makes them dangerous and part of what makes them useful.
+
+UNDECLARED MAGIC — using a borrowed source without a pact — is rare and considered suicidal. The source eventually notices. There is no recorded case of an undeclared mage living past forty.`,
+    },
+    {
+      id: 'glossary', icon: '📖', title: 'Glossary',
+      blurb: 'Names, terms, titles.',
+      body: `AURELIS — the northern empire. Capital: Aurelisis. Currently ruled by a regency council; the heir is fourteen.
+
+BURNED, THE — those marked by long exposure to the river's flame.
+
+CARDINAL — high-rank priest-mage of the Aurelisi Church. Iohanna was one. She is not technically defrocked; the Church has simply stopped writing.
+
+HOUSE — Khelmri nobility. There are nine Houses, of which three are royal.
+
+KEEPER — short for river-keeper.
+
+LANCE — Khelmri military unit, ~200 mounted soldiers under a sergeant. Fenrik was sergeant of the Third Lance.
+
+PACT — magical agreement to borrow power from a source.
+
+VALE, THE — the Sundered Vale. Always "the Vale," never just "Vale."
+
+VASS — the burning river, named after a forgotten god.`,
+    },
+  ],
+
+  'Helio-9': [
+    {
+      id: 'overview', icon: '🌍', title: 'Overview',
+      blurb: 'A station nobody built that nobody can leave.',
+      body: `Helio-9 is a hollowed asteroid in solar orbit. Nobody knows who hollowed it. The first human colonists arrived in 2287 to find air, water reclamation, and a working hydroponics deck — running on systems they could not read, in a language they could not translate.
+
+Two hundred years later, eleven generations deep, the city is home to roughly forty thousand people. The original alien systems still hum behind every wall. There are still locked doors. The Concord — three rotating councils — governs what the people of Helio-9 do. It does not govern what Helio-9 itself is doing.`,
+    },
+    {
+      id: 'history', icon: '📜', title: 'History',
+      blurb: 'From discovery to now.',
+      body: `2287 — First Concord expedition arrives at the asteroid designated Helio-9 (the ninth in a series of solar-orbital surveys). Expected to spend six months mapping a dead rock. Finds, instead, a hollow-cored station with operational life support, gravity, and an unmistakable artificial atmosphere. Reports back to Earth and is told to stay.
+
+2294 — Hydroponics Deck declared self-sustaining. Population: 612.
+
+2317 — First Section Four readings. The lower deck airlock that does not open begins emitting heat signatures on a sixty-year cycle. The Archivists log it and move on.
+
+2410 — Last confirmed communication with Earth. After this date, no transmissions either way are received. The Concord declares "communications quiet" rather than "communications lost." The distinction is debated.
+
+2461 — The Doorless Year. Section Four heat signatures spike for six months and stop. Engineering finds a previously unmapped corridor. The Concord seals it. The seal holds.
+
+2087 — present (current Concord year): population ~40,000. Three rotating councils — Engineers, Archivists, Voice. Section Four is making sound for the first time in twenty-six years.`,
+    },
+    {
+      id: 'sections', icon: '🗺️', title: 'The Decks',
+      blurb: 'How the station is laid out.',
+      body: `Helio-9 is laid out in vertical "decks" running along the asteroid's hollow core. There are 22 deck levels, numbered from the inner core outward.
+
+DECKS 1–4 (THE CORE) — life support, hydroponics, water reclamation. Reesha Ndovu's grandmother helped build the splice that connected human plumbing to the original systems. Most maintenance lives here. Outsiders rarely visit.
+
+DECKS 5–10 (LOWER) — residential, artisan workshops, the Voice's outer offices. Section Twelve, where Ade Okorie was elected, is on Deck 7.
+
+DECKS 11–17 (UPPER) — government, the main Archive, Concord council chambers. Tobari's converted closet office is on Deck 13.
+
+DECKS 18–22 (RIM) — observation bays, traffic control, hangar. The view of empty sky.
+
+SECTION FOUR — not a deck. A region of original alien construction sealed behind one of seven inscribed doors. The longest-standing mystery on the station. The inscription over its airlock has resisted translation for two hundred years.`,
+    },
+    {
+      id: 'councils', icon: '⚖️', title: 'The Three Councils',
+      blurb: 'How Helio-9 governs itself.',
+      body: `THE ENGINEERS — keep the lights on. Elected from the maintenance and construction trades. Six-year terms. Power to override Voice decisions on matters of station integrity. The most respected and least liked of the three councils.
+
+THE ARCHIVISTS — try to read the bones. Selected, not elected, through a competitive testing track. Lifetime appointment unless they choose to step down. They control which alien systems are studied, which are flagged dangerous, which are sealed. Tobari is third-rank.
+
+THE VOICE — everyone else. Elected from each of the 22 sections, two representatives per section. Two-year terms. Handles civilian disputes, petitions, contracts, the small business of living. Its junior counselors get the section nobody else wants. Ade Okorie has Section Twelve.
+
+The three councils meet jointly twice a year. Decisions require majority within each council, not majority overall. This means any one council can stall the station's politics indefinitely. They have. Twice.`,
+    },
+    {
+      id: 'glossary', icon: '📖', title: 'Glossary',
+      blurb: 'Common terms aboard the station.',
+      body: `THE BONES — what Archivists call the original alien construction.
+
+CONCORD — the unified government of Helio-9. Often used to mean "the three councils together."
+
+HUM — the constant background sound of the station's reclaimers. Locals tune it out. Visitors find it unsettling.
+
+INSCRIBED DOOR — one of seven sealed entrances to original alien construction. Each bears writing in a different unreadable language.
+
+OUTSIDE — Earth, theoretically. Used skeptically. "Did you hear from Outside?" is a joke.
+
+RUNNER — unofficial courier moving small things between decks. Not illegal but not regulated.
+
+SCRAP-HANDED — slang for an Engineer. Affectionate or dismissive depending on tone.
+
+SECTION — a residential subdivision. Each Deck holds two to three sections.
+
+WAKER — slang term that has, in the last week, started circulating in the maintenance corridors. Origin unclear.`,
+    },
+  ],
+
+  'Drowsing County': [
+    {
+      id: 'overview', icon: '🌍', title: 'Overview',
+      blurb: 'A small Massachusetts county that used to make paper.',
+      body: `Drowsing County, Massachusetts. Four towns — Drowsing, First Drowsing (the older one), Halverton, and Greenmill — wrapped around the dying remains of the Halverton Paper Company. The mill closed in 1994 and the population has been slipping ever since. There's a community college, a hospital with one wing locked since 1981, three high schools, and a state forest that locals don't enter after dark.
+
+The official population is 14,200. The Sheriff's office estimates the unofficial number is closer to 13,400 and falling.`,
+    },
+    {
+      id: 'history', icon: '📜', title: 'History',
+      blurb: 'What happened, what people will and won\'t say.',
+      body: `The county was settled in 1722 by Halverton mill workers fleeing Boston. The mill ran for two hundred and seventy-two years. It closed in 1994, three decades after pulp prices made New England paper noncompetitive.
+
+1973 — Something happened in the state forest. Eleven people went in over the course of October. Three came back. Of those three, one was Tom Doolan, who survived but never remembered what happened to the friends he went in with. The official report calls it a "search-and-rescue training failure" and seals further details. No one outside the Sheriff's office accepts this.
+
+1981 — Tom Doolan dies of stroke at twenty-four. His sister Maeve, then twenty, becomes a deputy that summer.
+
+1988 — Maeve elected Sheriff. She has been Sheriff continuously since.
+
+1996 — Three Drowsing High students miss the Halloween dance. Two are eventually found. One is not. The case is closed "inconclusive."
+
+1998 — Three more Drowsing High students go missing in October. Devin Walsh and two others. The state police give up after eight days.`,
+    },
+    {
+      id: 'geography', icon: '🗺️', title: 'Geography',
+      blurb: 'The four towns and the woods between them.',
+      body: `DROWSING (the main town) — population 6,200. The diner is here. So is the Sheriff's office, the high school, the supermarket. Reverend Marston's First Methodist sits on the south end of Main Street.
+
+FIRST DROWSING — population 1,800. Older, smaller, weirder. Most of the houses are pre-1900. The community college campus sits at its edge.
+
+HALVERTON — population 4,400. The mill town. Now mostly empty mill buildings and the people who refuse to leave them.
+
+GREENMILL — population 1,800. Farmland. Quietest of the four. Locals say the woods press closer here.
+
+THE STATE FOREST — 18,000 acres of mixed hardwood, threading through all four towns. Maintained by the state but practically abandoned. Camping is permitted. Camping is rare. The trailheads have signs that have been there since 1974, and the signs still say what they said in 1974.`,
+    },
+    {
+      id: 'rules', icon: '🌑', title: 'How Things Work Here',
+      blurb: 'The unwritten rules.',
+      body: `Drowsing horror is ambiguous, slow, and observational. Characters don't cast spells. They notice things. They feel cold rooms. They see someone who shouldn't be there.
+
+THE FOREST — don't go in after dark. Locals know this. Visitors are told once and then not told again.
+
+THE DEAD — sometimes come back. They don't always know. They are not zombies; they are confused. The Reverend has a quiet practice of letting them sit in the back pew.
+
+THE CAMERAS — sometimes don't record what you saw. The diner's camera is the most reliable in town. The hospital's are the least.
+
+THE OCTOBER PEOPLE — what locals call the men who appear in the diner, the post office, the road shoulder, in October. They never speak. They never cause trouble. Maeve has seen the same one four times in twenty years.
+
+NEW PEOPLE — outsiders. Treated kindly. Watched.`,
+    },
+    {
+      id: 'glossary', icon: '📖', title: 'Glossary',
+      blurb: 'Drowsing-specific terms.',
+      body: `THE DINER — Hank's All-Night Diner, on Route 38 just outside Drowsing. The only place in the county open from 11 PM to 5 AM. Janelle works the late shift here.
+
+THE FOREST — always "the forest" or "the state forest," never just "the woods" outside Drowsing. The distinction matters to locals.
+
+GREYS — what locals occasionally call the October People. Not a slur; just a name. Origin unclear.
+
+OCTOBER — capitalized when locals talk about it. Not a season — a phenomenon.
+
+THE PEW — the back-left pew of First Methodist. Reverend Marston leaves it open. Newcomers who sit in it are quietly redirected.
+
+QUEUE TIMES — the diner's slang for the hours between 3 and 4 AM, when "queue" means the line of October People at the counter, on the rare occasions they form one.`,
+    },
+  ],
+
+  'The Vermillion Court': [
+    {
+      id: 'overview', icon: '🌍', title: 'Overview',
+      blurb: 'A small principality with very long memories.',
+      body: `Vermilio is a Renaissance-coded city-state on the southern Mediterranean coast, large enough to mint its own coin, small enough to be run by twelve noble Houses and one elected ruler. The Doge serves a six-year term. No Doge in the last eighty years has finished theirs alive of natural causes.
+
+The Court runs on patronage. Poets, painters, spies, and assassins move from House to House every season. The common people of Vermilio — bakers, dockworkers, scribes — pretend not to notice. They live longer that way.`,
+    },
+    {
+      id: 'history', icon: '📜', title: 'History',
+      blurb: 'The founding, the Doges, the long quiet.',
+      body: `Vermilio was founded in 1238 as a trade station between Aragon and the Sublime Porte. By 1311 it had its first elected Doge and twelve recognized Houses. The early Doges ruled for life and were, by all accounts, mostly competent.
+
+The first poisoning happened in 1408. The Doge of the day, Albertus the Younger, died at table during the Feast of Lanterns. The widow, Donna Estelle of House Velli, became the first regent-Doge — the only woman to hold the office in the Court's history. She ruled six years and three days, then declined a second term and retired to a country estate where she lived to 91. The poisoning was never officially solved. The Court treated it, afterward, as an accident.
+
+Between 1408 and now, of forty-six elected Doges, only nine have died of natural causes. The poisoning rate accelerated dramatically after 1822 and has held steady since. The Court considers this normal. The common people of Vermilio do not discuss it.`,
+    },
+    {
+      id: 'houses', icon: '👑', title: 'The Twelve Houses',
+      blurb: 'Who they are, who they hate.',
+      body: `HOUSE MARCH — one of the four founding Houses. Currently led by Donna Cellaria di March. Strong in shipping, banking, and the grain trade. Two recent Doges have come from this House. Both died.
+
+HOUSE VELLI — also founding. Older blood than March, less money. Specialty: legal practice, court records. Velli scribes copy every legal document in Vermilio. They know everything. They never say.
+
+HOUSE DELACROIX — French-blooded, Aragonese-bound. Holds the Court's printing license. Quiet, polite, capable of anything.
+
+HOUSE CARRARA — controls quarrying and most of the city's stone. Builders. Stoneworkers. The least poison-inclined of the Houses, which is sometimes its own problem.
+
+HOUSE TANNEHILL — northern blood. Theologians, occasionally heretics. The current Bishop of Vermilio is a Tannehill cousin.
+
+(Seven more Houses exist; details vary by year.)
+
+ALL HOUSES are sworn to the Doge. None of them mean it.`,
+    },
+    {
+      id: 'court_etiquette', icon: '🎭', title: 'Court Etiquette',
+      blurb: 'The unwritten rules everyone is expected to know.',
+      body: `THE THURSDAY SALONS — every major House holds one. Attendance is a political signal. Donna Cellaria's is currently the most attended.
+
+THE FAN — used in court. A closed fan held against the chin means "I have nothing to add." A fan opened slowly during another speaker means "I disagree." A snapped-shut fan means "and I will say so later." This is taken seriously.
+
+THE WINE — never drink wine you did not see poured. Polite hosts, when serving a guest from a sealed bottle, will drink first. Less polite hosts have less polite reasons.
+
+THE DUEL — formally illegal. Practically conducted in the southern villas, where the Doge's Watch does not patrol. Most Court duels are over poetry, not blood.
+
+POISON — considered an art. Crude poisoning is scorned. Subtle poisoning is admired. There is a respected guild of physicians, half of whom were trained as poisoners.`,
+    },
+    {
+      id: 'glossary', icon: '📖', title: 'Glossary',
+      blurb: 'Common Court terms.',
+      body: `THE COURT — when capitalized, refers to the political body of the Twelve Houses + the Doge's office. When lowercased, refers to the physical Doge's Court building.
+
+DOGE — elected ruler of Vermilio. Six-year term. Address as "Most Serene."
+
+HOUSE — one of the Twelve noble families. Capitalized in formal use.
+
+LANTERN FEAST — annual midsummer feast hosted by the sitting Doge. Largest social event of the year. Highest historical poisoning rate of any night.
+
+PATRON — head of a House. Female: Donna. Male: Don.
+
+SALON — a House's regular gathering. Thursday by tradition.
+
+THE WATCH — the Doge's personal guard. Distinct from the city watch. Smaller. More feared.
+
+THE WHEEL — the political phrase for an entire six-year Doge term. "We're a year into the wheel" means a year into the current Doge.`,
+    },
+  ],
+
+  'Neo-Taipei 2089': [
+    {
+      id: 'overview', icon: '🌍', title: 'Overview',
+      blurb: 'A drowned city that grew up instead of out.',
+      body: `Taipei drowned in 2061. The new city was rebuilt as forty-six vertical districts stacked along the original mountain spine, with the lower levels permanently flooded and the upper levels permanently above the rain. The four big keiretsu — Shenzhou-Kobe, Aozora Health, the Jade Cooperative, and Helix Defense — hold most of the patents that keep people alive. Citizenship is a subscription.
+
+It rains nine months of the year. By the time the rain reaches level twelve, it has fallen through three floors of plumbing.`,
+    },
+    {
+      id: 'history', icon: '📜', title: 'History',
+      blurb: 'How we got vertical.',
+      body: `2034 — First seawall completed. Holds for twenty-six years.
+2058 — Seawall begins to fail.
+2061 — Storm Yuhua. Seawall collapses overnight. Lower Taipei floods to a depth of forty meters. Forty-one thousand confirmed dead. The "Yuhua Refugees" — survivors who refused to evacuate — establish the first permanent floating settlements over the drowned city.
+2063 — Reconstruction Authority forms. Vertical-build code adopted.
+2071 — First fully vertical district complete (now: District 1).
+2089 (present) — Forty-six districts. The four keiretsu effectively replace the previous government for purposes of utilities, healthcare, transit, and security.
+
+The Reconstruction Authority still technically exists. It meets quarterly. Nothing is decided.`,
+    },
+    {
+      id: 'levels', icon: '🗺️', title: 'The Levels',
+      blurb: 'How the city is layered.',
+      body: `LEVELS 1–6 (UNDERSTACK) — the drowned old city. Mostly flooded. Pumps, salvage operations, smugglers, and the people who don't show up in registries. Police don't patrol below level 4. They claim it's "logistically impossible." The actual reason is more pragmatic.
+
+LEVELS 7–12 (LOWER) — the working levels. Mechanics, fab shops, runners, late-night noodle stands. Booker's shop is on level 22 but he came up from 7 — like most level-22 mechanics did. The air filters here are notoriously corp-grade.
+
+LEVELS 13–22 (MID) — middle-class. Apartments. Schools. The kind of office most office workers see. Rain is a feature here, not an emergency.
+
+LEVELS 23–35 (UPPER) — keiretsu offices. Doctors. Lawyers. The kind of restaurants you don't find by walking past them.
+
+LEVELS 36–46 (CANOPY) — corporate executive housing. The clouds that the lower levels see are the canopy levels' weather. People who live here don't take the elevators down without a reason.`,
+    },
+    {
+      id: 'corps', icon: '🏛️', title: 'The Four Keiretsu',
+      blurb: 'Who actually runs the city.',
+      body: `SHENZHOU-KOBE — broad industrial conglomerate. Builds most of the city's infrastructure. Controls the elevators. Famously slow about repairs in lower districts.
+
+AOZORA HEALTH — medical patents and pharmaceuticals. Holds the licenses on most of the cybernetic surgical procedures used outside the black clinics. Their air-filter division killed Booker's shift partner, although you cannot prove this in a Vermilio — sorry, in a Neo-Taipei court.
+
+THE JADE COOPERATIVE — financial and information services. Owns most of the city's data infrastructure. Net-runners like Vex specialize in pulling things out of Jade systems without Jade noticing.
+
+HELIX DEFENSE — security, both private and contracted-to-state. The closest thing to a police force above level 4. Their no-knock raids are legally protected. Detective Cheng has lost two case overturns to Helix corporate counsel.
+
+The four keiretsu cooperate at an executive level and compete viciously at every level below. This is not an accident.`,
+    },
+    {
+      id: 'glossary', icon: '📖', title: 'Glossary',
+      blurb: 'Neo-Taipei street terms.',
+      body: `BLACK-NET — restricted corporate networks. Helix Defense black-net is the most secure.
+
+CANOPY — the upper-most levels (36+). Slang.
+
+CHROME — slang for cybernetic enhancements. "He's all chrome" means heavily augmented.
+
+DIVE — a net-running session. Causes neurological strain at depth. "Six dives this year" is a lot.
+
+ELEVATOR LIFE — slang for someone who works on a level above where they live. Common.
+
+HANDLER — the registered human responsible for an AI assistant. Required for any class-3 AI in city limits.
+
+KEIRETSU — Japanese loanword. Refers to the four big corp groups.
+
+NO-KNOCK — Helix Defense's signature entry style. Currently legal.
+
+RUNNER — anyone who moves things (data, drugs, bodies) between levels. Subscription model varies.
+
+UNDERSTACK — levels 1–6, the flooded levels. Slang.
+
+YUHUA — the storm of 2061. Used as a date marker. "Pre-Yuhua" / "post-Yuhua."`,
+    },
+  ],
+};
+// ──────────────────────────────────────────────────────────────────────
 // PUBLIC CHATS
 // Short hand-authored exchanges between two characters. Each one stays in
 // character voice — Sheriff Doolan sounds like Doolan, Vex sounds like Vex.
@@ -989,23 +1358,26 @@ async function main() {
   }
   console.log(`✓ ${USERS.length} users`);
 
-  // Insert worlds
+  // Insert worlds (with Bible if we have one for the world)
   const worldIds: Record<string, string> = {};
+  let bibleSectionsAdded = 0;
   for (const w of WORLDS) {
+    const bible = BIBLES[w.name] || [];
     const r = await query(
-      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, is_nsfw, member_count)
-       VALUES ($1, $2, $3, $4, $5, $6, true, false, 1)
+      `INSERT INTO worlds (creator_id, name, description, lore, rules, setting, is_public, is_nsfw, member_count, bible)
+       VALUES ($1, $2, $3, $4, $5, $6, true, false, 1, $7)
        RETURNING id`,
-      [userIds[h(w.creator)], w.name, w.description, w.lore, JSON.stringify(w.rules), w.setting]
+      [userIds[h(w.creator)], w.name, w.description, w.lore, JSON.stringify(w.rules), w.setting, JSON.stringify(bible)]
     );
     worldIds[w.name] = r.rows[0].id;
+    bibleSectionsAdded += bible.length;
     // Creator becomes WorldMaster
     await query(
       `INSERT INTO world_members (world_id, user_id, is_worldmaster) VALUES ($1, $2, true)`,
       [r.rows[0].id, userIds[h(w.creator)]]
     );
   }
-  console.log(`✓ ${WORLDS.length} worlds`);
+  console.log(`✓ ${WORLDS.length} worlds (${bibleSectionsAdded} bible sections)`);
 
   // Insert characters and remember their IDs by name (for public chats below).
   const characterIds: Record<string, string> = {};
