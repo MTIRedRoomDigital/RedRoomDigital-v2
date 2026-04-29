@@ -119,17 +119,17 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — each tile links to its own page so the profile becomes a hub. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center">
+        <Link href="/characters" className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center hover:border-red-500/50 transition-colors">
           <div className="text-2xl font-bold text-white">{profile.characters.length}</div>
           <div className="text-sm text-slate-400">Characters</div>
-        </div>
-        <div className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center">
+        </Link>
+        <Link href="/worlds/mine" className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center hover:border-amber-500/50 transition-colors">
           <div className="text-2xl font-bold text-white">{profile.worlds.length}</div>
           <div className="text-sm text-slate-400">Worlds</div>
-        </div>
-        <Link href="/friends" className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center hover:border-red-500/50 transition-colors">
+        </Link>
+        <Link href="/friends" className="p-4 bg-slate-800 border border-slate-700 rounded-lg text-center hover:border-blue-500/50 transition-colors">
           <div className="text-2xl font-bold text-white">{friendCount}</div>
           <div className="text-sm text-slate-400">Friends</div>
         </Link>

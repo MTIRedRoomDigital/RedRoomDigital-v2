@@ -53,14 +53,26 @@ export default function MyWorldsPage() {
   const router = useRouter();
   const [data, setData] = useState<MyWorldsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
     if (!user) { router.push('/login?next=/worlds/mine'); return; }
-    api.get<MyWorldsResponse>('/api/users/me/worlds').then((res) => {
-      if (res.success && res.data) setData(res.data as any);
-      setLoading(false);
-    });
+    api.get<MyWorldsResponse>('/api/users/me/worlds')
+      .then((res) => {
+        if (res.success && res.data) {
+          // Defensive: API should always return arrays, but coerce just in case.
+          const d = res.data as any;
+          setData({
+            created: Array.isArray(d.created) ? d.created : [],
+            joined: Array.isArray(d.joined) ? d.joined : [],
+          });
+        } else {
+          setError((res as any).message || 'Could not load your worlds.');
+        }
+      })
+      .catch((e) => setError(e?.message || 'Network error.'))
+      .finally(() => setLoading(false));
   }, [user, authLoading, router]);
 
   if (authLoading || loading) {
@@ -75,8 +87,25 @@ export default function MyWorldsPage() {
     );
   }
 
-  if (!data) return null;
-  const totalCount = data.created.length + data.joined.length;
+  if (error) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center">
+        <div className="text-5xl mb-4">⚠️</div>
+        <h2 className="text-xl font-bold text-white mb-2">Couldn&apos;t load your worlds</h2>
+        <p className="text-slate-400 mb-6 text-sm">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // Should never happen now, but treat as empty for safety.
+  const safeData = data || { created: [], joined: [] };
+  const totalCount = safeData.created.length + safeData.joined.length;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -87,7 +116,7 @@ export default function MyWorldsPage() {
           <p className="text-sm text-slate-400">
             {totalCount === 0
               ? 'You haven\'t created or joined any worlds yet.'
-              : `${data.created.length} created · ${data.joined.length} joined`}
+              : `${safeData.created.length} created · ${safeData.joined.length} joined`}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -111,7 +140,7 @@ export default function MyWorldsPage() {
       ) : (
         <>
           {/* Worlds I created */}
-          {data.created.length > 0 && (
+          {safeData.created.length > 0 && (
             <section className="mb-10">
               <SectionHeader
                 accent="amber"
@@ -120,7 +149,7 @@ export default function MyWorldsPage() {
                 description="You're the WorldMaster. Edit lore, run campaigns, approve members."
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.created.map((w) => (
+                {safeData.created.map((w) => (
                   <WorldCard key={w.id} world={w} />
                 ))}
               </div>
@@ -128,7 +157,7 @@ export default function MyWorldsPage() {
           )}
 
           {/* Worlds I'm in */}
-          {data.joined.length > 0 && (
+          {safeData.joined.length > 0 && (
             <section>
               <SectionHeader
                 accent="blue"
@@ -137,7 +166,7 @@ export default function MyWorldsPage() {
                 description="Worlds where you're a member, or where one of your characters lives."
               />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.joined.map((w) => (
+                {safeData.joined.map((w) => (
                   <WorldCard key={w.id} world={w} />
                 ))}
               </div>
