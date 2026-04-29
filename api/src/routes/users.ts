@@ -234,6 +234,87 @@ userRouter.get('/characters', authenticate, async (req: AuthRequest, res: Respon
 });
 
 /**
+ * GET /api/users/me/worlds
+ * Worlds the current user has any relationship to:
+ *   - created (creator)
+ *   - worldmaster (member with is_worldmaster=true, not creator)
+ *   - member (regular world_members entry)
+ *   - character_in (one of their characters lives there, but they aren't a member)
+ *
+ * Returned as { created: [], joined: [] } where `joined` covers everything
+ * that isn't "I made this world." Each world includes the user's relationship
+ * label so the UI can render it.
+ */
+userRouter.get('/me/worlds', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user!.id;
+
+    // Worlds I created
+    const createdRes = await query(
+      `SELECT w.id, w.name, w.description, w.setting, w.thumbnail_url, w.is_public,
+              w.is_nsfw, w.member_count, w.created_at,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id) AS character_count,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id AND c.creator_id = $1) AS my_character_count
+         FROM worlds w
+        WHERE w.creator_id = $1
+        ORDER BY w.updated_at DESC`,
+      [userId]
+    );
+
+    // Worlds I'm a member of (creator excluded — those are in `created`)
+    const memberRes = await query(
+      `SELECT w.id, w.name, w.description, w.setting, w.thumbnail_url, w.is_public,
+              w.is_nsfw, w.member_count, w.created_at, w.creator_id,
+              cu.username AS creator_name,
+              wm.is_worldmaster,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id) AS character_count,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id AND c.creator_id = $1) AS my_character_count
+         FROM world_members wm
+         JOIN worlds w ON wm.world_id = w.id
+         JOIN users cu ON w.creator_id = cu.id
+        WHERE wm.user_id = $1 AND w.creator_id != $1
+        ORDER BY wm.joined_at DESC`,
+      [userId]
+    );
+
+    // Worlds my characters are in but I'm NOT a member of (rare but possible — a
+    // world creator removed me as member but my characters still have world_id set)
+    const characterOnlyRes = await query(
+      `SELECT DISTINCT w.id, w.name, w.description, w.setting, w.thumbnail_url, w.is_public,
+              w.is_nsfw, w.member_count, w.created_at, w.creator_id,
+              cu.username AS creator_name,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id) AS character_count,
+              (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id AND c.creator_id = $1) AS my_character_count
+         FROM characters c
+         JOIN worlds w ON c.world_id = w.id
+         JOIN users cu ON w.creator_id = cu.id
+        WHERE c.creator_id = $1
+          AND w.creator_id != $1
+          AND NOT EXISTS (
+            SELECT 1 FROM world_members wm WHERE wm.world_id = w.id AND wm.user_id = $1
+          )
+        ORDER BY w.updated_at DESC`,
+      [userId]
+    );
+
+    // Tag each row with a relationship label
+    const created = createdRes.rows.map((r: any) => ({ ...r, relationship: 'creator' as const }));
+    const joined = [
+      ...memberRes.rows.map((r: any) => ({
+        ...r,
+        relationship: r.is_worldmaster ? 'worldmaster' as const : 'member' as const,
+      })),
+      ...characterOnlyRes.rows.map((r: any) => ({ ...r, relationship: 'character_in' as const })),
+    ];
+
+    res.json({ success: true, data: { created, joined } });
+  } catch (error: any) {
+    console.error('Get my worlds error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+/**
  * POST /api/users/recalc-contradictions
  * Manually trigger a contradiction recalculation for the current user.
  * The user score is a cheap weighted aggregate of their characters — no AI cost —

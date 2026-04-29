@@ -165,7 +165,7 @@ export function Navbar() {
                   <Link href="/characters" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
                     My Characters
                   </Link>
-                  <Link href="/worlds" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+                  <Link href="/worlds/mine" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
                     My Worlds
                   </Link>
                   <Link href="/friends" className="block px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
@@ -272,6 +272,9 @@ export function Navbar() {
               </Link>
               <Link href="/characters" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
                 My Characters
+              </Link>
+              <Link href="/worlds/mine" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
+                My Worlds
               </Link>
               <Link href="/friends" onClick={() => setMobileOpen(false)} className="block py-2.5 text-slate-300 hover:text-white">
                 My Friends
