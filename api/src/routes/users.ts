@@ -277,21 +277,24 @@ userRouter.get('/me/worlds', authenticate, async (req: AuthRequest, res: Respons
       [userId]
     );
 
-    // Worlds my characters are in but I'm NOT a member of (rare but possible — a
-    // world creator removed me as member but my characters still have world_id set)
+    // Worlds my characters are in but I'm NOT a member of (rare but possible —
+    // a world creator removed me as member but my characters still have
+    // world_id set). Use a subquery so we can DISTINCT on the world without
+    // tripping Postgres's "ORDER BY must appear in select list" rule.
     const characterOnlyRes = await query(
-      `SELECT DISTINCT w.id, w.name, w.description, w.setting, w.thumbnail_url, w.is_public,
-              w.is_nsfw, w.member_count, w.created_at, w.creator_id,
+      `SELECT w.id, w.name, w.description, w.setting, w.thumbnail_url, w.is_public,
+              w.is_nsfw, w.member_count, w.created_at, w.updated_at, w.creator_id,
               cu.username AS creator_name,
               (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id) AS character_count,
               (SELECT COUNT(*) FROM characters c WHERE c.world_id = w.id AND c.creator_id = $1) AS my_character_count
-         FROM characters c
-         JOIN worlds w ON c.world_id = w.id
+         FROM worlds w
          JOIN users cu ON w.creator_id = cu.id
-        WHERE c.creator_id = $1
-          AND w.creator_id != $1
+        WHERE w.creator_id != $1
           AND NOT EXISTS (
             SELECT 1 FROM world_members wm WHERE wm.world_id = w.id AND wm.user_id = $1
+          )
+          AND EXISTS (
+            SELECT 1 FROM characters c WHERE c.world_id = w.id AND c.creator_id = $1
           )
         ORDER BY w.updated_at DESC`,
       [userId]
